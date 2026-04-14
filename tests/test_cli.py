@@ -4,6 +4,7 @@
 import json
 import os
 import subprocess
+import sys
 
 import pytest
 
@@ -24,7 +25,7 @@ def dirty_file(tmp_path):
 
 def _run_check(*args):
     return subprocess.run(
-        ["python3", "-m", "python_fp_lint", "check", *args],
+        [sys.executable, "-m", "python_fp_lint", "check", *args],
         capture_output=True,
         text=True,
         cwd=os.path.dirname(os.path.dirname(__file__)),
@@ -34,7 +35,7 @@ def _run_check(*args):
 def _run_bare(*args):
     """Run without the 'check' subcommand."""
     return subprocess.run(
-        ["python3", "-m", "python_fp_lint", *args],
+        [sys.executable, "-m", "python_fp_lint", *args],
         capture_output=True,
         text=True,
         cwd=os.path.dirname(os.path.dirname(__file__)),

@@ -27,7 +27,7 @@ jobs:
         run: |
           uv sync --all-extras
           uv pip install -e .
-          pip install semgrep
+          uv pip install semgrep
           semgrep --version
 
       - name: Check formatting (Black)
