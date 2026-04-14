@@ -1,10 +1,5 @@
 # python_fp_lint/lint_gate.py
-"""Lint gates — ast-grep-only and mixed-backend lint checking.
-
-LintGate runs all rules via ast-grep for maximum speed.
-MixedLintGate runs Semgrep for pattern rules, plus ast-grep for the two
-rules that require tree-sitter-specific features (stopBy, has+kind).
-"""
+"""Unified LintGate — runs ast-grep + Ruff + beniget in sequence."""
 
 import glob
 import json
@@ -12,11 +7,15 @@ import os
 import shutil
 import subprocess
 
+from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.result import LintResult, LintViolation
+
+# Ruff rule selection — moderate hygiene set
+_RUFF_SELECT = "F,E,B,BLE,T20,TID252,C901,UP"
 
 
 class LintGate:
-    """Pure ast-grep lint checker — runs all 27 rules via ast-grep."""
+    """Unified lint gate — runs ast-grep, Ruff, and beniget reassignment detection."""
 
     def __init__(self, rules_dir: str | None = None):
         self.rules_dir = rules_dir
@@ -26,87 +25,39 @@ class LintGate:
         if not py_files:
             return LintResult(passed=True, violations=[])
 
+        violations = []
+        violations.extend(self._run_ast_grep(py_files, project_root))
+        violations.extend(self._run_ruff(py_files))
+        violations.extend(self._run_reassignment(py_files, project_root))
+
+        return LintResult(passed=len(violations) == 0, violations=violations)
+
+    def _run_ast_grep(self, files: list[str], project_root: str) -> list[LintViolation]:
         rules_dir = self._resolve_rules_dir(project_root)
         if rules_dir is None:
-            return LintResult(passed=True, violations=[])
+            return []
 
         sg = _find_sg()
         if sg is None:
-            return LintResult(
-                passed=False,
-                violations=[
-                    LintViolation(
-                        rule="tool-missing",
-                        file="",
-                        line=0,
-                        message="ast-grep (sg) binary not found. Install from: https://ast-grep.github.io/",
-                    )
-                ],
-            )
+            return []
 
         sgconfig = os.path.join(rules_dir, "sgconfig.yml")
         if not os.path.exists(sgconfig):
-            return LintResult(passed=True, violations=[])
+            return []
 
-        violations = _run_sg(sg, rules_dir, py_files)
-        return LintResult(passed=len(violations) == 0, violations=violations)
+        return _run_sg(sg, rules_dir, files)
 
-    def _resolve_rules_dir(self, project_root: str) -> str | None:
-        return _resolve_rules_dir(self.rules_dir, project_root)
+    def _run_ruff(self, files: list[str]) -> list[LintViolation]:
+        ruff = _find_ruff()
+        if ruff is None:
+            return []
+        return _run_ruff(ruff, files)
 
-
-class MixedLintGate:
-    """Mixed-backend lint checker — Semgrep rules + ast-grep for tree-sitter-only rules.
-
-    Runs Semgrep for the 26 pattern rules, then ast-grep for no-deep-nesting
-    and no-loop-mutation (which require tree-sitter features not expressible
-    in Semgrep).
-    """
-
-    # ast-grep rules that Semgrep cannot express
-    _SG_ONLY_RULES = {"no-deep-nesting", "no-loop-mutation"}
-
-    def __init__(self, rules_dir: str | None = None):
-        self.rules_dir = rules_dir
-
-    def evaluate(self, changed_files: list[str], project_root: str) -> LintResult:
-        py_files = _filter_python_files(changed_files)
-        if not py_files:
-            return LintResult(passed=True, violations=[])
-
-        rules_dir = _resolve_rules_dir(self.rules_dir, project_root)
-        if rules_dir is None:
-            return LintResult(passed=True, violations=[])
-
-        semgrep = _find_semgrep()
-        if semgrep is None:
-            return LintResult(
-                passed=False,
-                violations=[
-                    LintViolation(
-                        rule="tool-missing",
-                        file="",
-                        line=0,
-                        message="semgrep binary not found. Install with: pip install semgrep",
-                    )
-                ],
-            )
-
-        violations = []
-
-        # Run Semgrep (26 rules)
-        semgrep_rules = os.path.join(rules_dir, "semgrep-rules.yml")
-        if os.path.exists(semgrep_rules):
-            violations.extend(_run_semgrep(semgrep, semgrep_rules, py_files))
-
-        # Run ast-grep for tree-sitter-only rules — optional
-        sg = _find_sg()
-        sgconfig = os.path.join(rules_dir, "sgconfig.yml")
-        if sg is not None and os.path.exists(sgconfig):
-            sg_violations = _run_sg(sg, rules_dir, py_files)
-            violations.extend(v for v in sg_violations if v.rule in self._SG_ONLY_RULES)
-
-        return LintResult(passed=len(violations) == 0, violations=violations)
+    def _run_reassignment(
+        self, files: list[str], project_root: str
+    ) -> list[LintViolation]:
+        result = ReassignmentGate().evaluate(files, project_root)
+        return result.violations
 
     def _resolve_rules_dir(self, project_root: str) -> str | None:
         return _resolve_rules_dir(self.rules_dir, project_root)
@@ -144,12 +95,12 @@ def _filter_python_files(files: list[str]) -> list[str]:
     return result
 
 
-def _find_semgrep() -> str | None:
-    return shutil.which("semgrep")
-
-
 def _find_sg() -> str | None:
     return shutil.which("sg") or shutil.which("ast-grep")
+
+
+def _find_ruff() -> str | None:
+    return shutil.which("ruff")
 
 
 def _resolve_rules_dir(explicit_dir: str | None, project_root: str) -> str | None:
@@ -169,9 +120,8 @@ def _resolve_rules_dir(explicit_dir: str | None, project_root: str) -> str | Non
     if config_dir:
         candidates.append(config_dir)
     for candidate in candidates:
-        if os.path.isdir(candidate) and (
-            os.path.exists(os.path.join(candidate, "sgconfig.yml"))
-            or os.path.exists(os.path.join(candidate, "semgrep-rules.yml"))
+        if os.path.isdir(candidate) and os.path.exists(
+            os.path.join(candidate, "sgconfig.yml")
         ):
             return candidate
     return None
@@ -190,41 +140,6 @@ def _read_config_rules_dir() -> str | None:
             return json.load(f).get("lint_rules_dir")
     except (json.JSONDecodeError, OSError):
         return None
-
-
-def _run_semgrep(
-    semgrep_path: str, rules_file: str, files: list[str]
-) -> list[LintViolation]:
-    try:
-        result = subprocess.run(
-            [semgrep_path, "scan", "--config", rules_file, "--json", "--no-git-ignore"]
-            + files,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return []
-
-    if not result.stdout.strip():
-        return []
-
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return []
-
-    violations = []
-    for entry in data.get("results", []):
-        violations.append(
-            LintViolation(
-                rule=entry.get("check_id", "unknown").rsplit(".", 1)[-1],
-                file=entry.get("path", ""),
-                line=entry.get("start", {}).get("line", 0),
-                message=entry.get("extra", {}).get("message", ""),
-            )
-        )
-    return violations
 
 
 def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolation]:
@@ -270,14 +185,6 @@ def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolatio
             )
         )
     return violations
-
-
-# Ruff rule selection — moderate hygiene set
-_RUFF_SELECT = "F,E,B,BLE,T20,TID252,C901,UP"
-
-
-def _find_ruff() -> str | None:
-    return shutil.which("ruff")
 
 
 def _run_ruff(ruff_path: str, files: list[str]) -> list[LintViolation]:

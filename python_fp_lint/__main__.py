@@ -8,7 +8,7 @@ import argparse
 import json
 import sys
 
-from python_fp_lint.lint_gate import LintGate, MixedLintGate
+from python_fp_lint.lint_gate import LintGate
 from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.rules_meta import list_rules
 
@@ -16,14 +16,17 @@ from python_fp_lint.rules_meta import list_rules
 def _run_check(args):
     violations = []
     run_lint = not args.reassignment_only
+    # Note: unified gate runs both ast-grep and Ruff; reassignment is always included in gate
     run_reassignment = not args.semgrep_only
 
     if run_lint:
-        gate = MixedLintGate() if (args.mixed or args.semgrep_only) else LintGate()
+        gate = LintGate()
         result = gate.evaluate(args.files, ".")
         violations.extend(result.violations)
 
     if run_reassignment:
+        # Note: reassignment violations are now also included in LintGate,
+        # so we may have duplicates here. This is left as-is for Task 4 cleanup.
         result = ReassignmentGate().evaluate(args.files, ".")
         violations.extend(result.violations)
 
@@ -119,7 +122,7 @@ def _run_schema(_args):
                     "severity": {"type": "string"},
                     "backend": {
                         "type": "string",
-                        "enum": ["ast-grep", "semgrep", "beniget"],
+                        "enum": ["ast-grep", "ruff", "beniget"],
                     },
                 },
             },
