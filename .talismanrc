@@ -13,7 +13,7 @@ fileignoreconfig:
 - filename: tests/test_cli.py
   checksum: 989e567d0302fafc30d4e1eaeb4288808e23eac3
 - filename: python_fp_lint/__main__.py
-  checksum: b1935a551f38c9dbc2bab4ce41d0dffaf057cf50
+  checksum: 47208e4461ab06b4b869fa31741bc7963b1ec64c82a1aa377e369d2d0e06b332
 - filename: docs/superpowers/specs/2026-04-14-semgrep-to-ruff-migration-design.md
   checksum: 3ce58859ebc2bf366222007dc85a4f8abde5acace14efc92ad3f7edca656bd1a
 - filename: tests/test_ruff_integration.py

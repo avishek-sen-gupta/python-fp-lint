@@ -39,31 +39,64 @@ def _ast_grep_rules() -> list[dict]:
     return rules
 
 
-def _semgrep_rules() -> list[dict]:
-    rules = []
-    path = _semgrep_rules_file()
-    if not os.path.exists(path):
-        return rules
-    try:
-        with open(path) as f:
-            data = yaml.safe_load(f)
-    except (yaml.YAMLError, OSError):
-        return rules
-    for entry in data.get("rules", []):
-        rules.append(
-            {
-                "id": entry.get("id", "unknown"),
-                "message": entry.get("message", ""),
-                "severity": entry.get("severity", "WARNING").lower(),
-                "backend": "semgrep",
-            }
-        )
-    return rules
+def _ruff_rules() -> list[dict]:
+    """Return metadata for Ruff rules selected in LintGate._RUFF_SELECT."""
+    # Ruff rule codes selected in LintGate: F, E, B, BLE, T20, TID252, C901, UP
+    return [
+        {
+            "id": "F",
+            "message": "Pyflakes checks",
+            "severity": "error",
+            "backend": "ruff",
+        },
+        {
+            "id": "E",
+            "message": "pycodestyle (PEP 8) error checks",
+            "severity": "error",
+            "backend": "ruff",
+        },
+        {
+            "id": "B",
+            "message": "flake8-bugbear checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "BLE",
+            "message": "flake8-blind-except checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "T20",
+            "message": "flake8-print checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "TID252",
+            "message": "flake8-tidy-imports checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "C901",
+            "message": "McCabe complexity checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "UP",
+            "message": "pyupgrade checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+    ]
 
 
 def list_rules() -> list[dict]:
     """Return metadata for all available lint rules across all backends."""
-    rules = _ast_grep_rules() + _semgrep_rules()
+    rules = _ast_grep_rules() + _ruff_rules()
     rules.append(
         {
             "id": "reassignment",

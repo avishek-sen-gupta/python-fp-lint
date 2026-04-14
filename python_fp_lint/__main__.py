@@ -1,5 +1,5 @@
 # python_fp_lint/__main__.py
-"""CLI entry point: python -m python_fp_lint check [options] file1.py file2.py
+"""CLI entry point: python -m python_fp_lint check file1.py file2.py
 
 Designed for both human use (text output) and LLM agent use (--format json).
 """
@@ -9,30 +9,17 @@ import json
 import sys
 
 from python_fp_lint.lint_gate import LintGate
-from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.rules_meta import list_rules
 
 
 def _run_check(args):
-    violations = []
-    run_lint = not args.reassignment_only
-    # Note: unified gate runs both ast-grep and Ruff; reassignment is always included in gate
-    run_reassignment = not args.semgrep_only
-
-    if run_lint:
-        gate = LintGate()
-        result = gate.evaluate(args.files, ".")
-        violations.extend(result.violations)
-
-    if run_reassignment:
-        # Note: reassignment violations are now also included in LintGate,
-        # so we may have duplicates here. This is left as-is for Task 4 cleanup.
-        result = ReassignmentGate().evaluate(args.files, ".")
-        violations.extend(result.violations)
+    gate = LintGate()
+    result = gate.evaluate(args.files, ".")
+    violations = result.violations
 
     if args.format == "json":
         payload = {
-            "passed": len(violations) == 0,
+            "passed": result.passed,
             "violation_count": len(violations),
             "violations": [
                 {
@@ -55,7 +42,7 @@ def _run_check(args):
                 print(f"  [{v.rule}] {loc} — {v.message}")
             print(f"\n{len(violations)} violation(s) found.")
 
-    sys.exit(0 if not violations else 1)
+    sys.exit(0 if result.passed else 1)
 
 
 def _run_rules(args):
@@ -148,19 +135,6 @@ def main():
     # --- check ---
     check = sub.add_parser("check", help="Run lint checks on files")
     check.add_argument("files", nargs="+", help="Python files to check")
-    check.add_argument(
-        "--semgrep-only",
-        action="store_true",
-        help="Run only Semgrep + tree-sitter-only ast-grep rules",
-    )
-    check.add_argument(
-        "--reassignment-only", action="store_true", help="Run only reassignment checks"
-    )
-    check.add_argument(
-        "--mixed",
-        action="store_true",
-        help="Use MixedLintGate (Semgrep + ast-grep) instead of pure ast-grep",
-    )
 
     # --- rules ---
     sub.add_parser("rules", help="List all available lint rules")

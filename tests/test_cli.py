@@ -71,22 +71,6 @@ class TestCLI:
         assert result.returncode == 1
         assert "no-setitem-call" in result.stdout
 
-    def test_semgrep_only_flag(self, tmp_path):
-        f = tmp_path / "reassign.py"
-        f.write_text("x = 1\nx = 2\n")
-        result = _run_check("--semgrep-only", str(f))
-        # Note: unified gate always includes reassignment, so --semgrep-only no longer disables it
-        # This test may be removed in Task 4 (simplify CLI)
-        assert result.returncode == 1
-        assert "reassignment" in result.stdout
-
-    def test_reassignment_only_flag(self, tmp_path):
-        f = tmp_path / "reassign.py"
-        f.write_text("x = 1\nx = 2\n")
-        result = _run_check("--reassignment-only", str(f))
-        assert result.returncode == 1
-        assert "violation" in result.stdout
-
 
 class TestJSONOutput:
     def test_clean_file_json(self, clean_file):
@@ -147,8 +131,11 @@ class TestRulesCommand:
     def test_rules_text(self):
         result = _run_bare("rules")
         assert result.returncode == 0
-        # Should list some rules (ast-grep, and possibly beniget)
+        # Should list some rules (ast-grep, ruff, and beniget)
         assert len(result.stdout) > 0
+        assert "ast-grep" in result.stdout
+        assert "ruff" in result.stdout
+        assert "beniget" in result.stdout
 
     def test_rules_json(self):
         result = _run_bare("--format", "json", "rules")
@@ -157,7 +144,7 @@ class TestRulesCommand:
         assert isinstance(data, list)
         assert len(data) > 0
         backends = {r["backend"] for r in data}
-        assert backends == {"ast-grep", "semgrep", "beniget"}
+        assert backends == {"ast-grep", "ruff", "beniget"}
         for r in data:
             assert set(r.keys()) == {"id", "message", "severity", "backend"}
 
