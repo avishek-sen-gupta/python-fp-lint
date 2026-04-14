@@ -1,5 +1,5 @@
 rules:
-  # --- Simple pattern rules (16) ---
+  # --- Simple pattern rules (18) ---
 
   - id: no-list-append
     pattern: $OBJ.append(...)
@@ -254,5 +254,49 @@ rules:
           - pattern: "Union[$T, None]"
           - pattern: "Union[None, $T]"
     message: "Avoid Optional/None unions — use sentinel values or separate code paths"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-unfrozen-dataclass
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @dataclass
+              class $C:
+                  ...
+          - pattern: |
+              @dataclasses.dataclass
+              class $C:
+                  ...
+          - patterns:
+              - pattern: |
+                  @dataclass(...)
+                  class $C:
+                      ...
+              - pattern-not: |
+                  @dataclass(..., frozen=True, ...)
+                  class $C:
+                      ...
+          - patterns:
+              - pattern: |
+                  @dataclasses.dataclass(...)
+                  class $C:
+                      ...
+              - pattern-not: |
+                  @dataclasses.dataclass(..., frozen=True, ...)
+                  class $C:
+                      ...
+    message: "dataclass without frozen=True — add frozen=True for immutability"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-list-dict-param-annotation
+    patterns:
+      - pattern-either:
+          - pattern: "def $F(..., $P: list, ...): ..."
+          - pattern: "def $F(..., $P: list[$T], ...): ..."
+          - pattern: "def $F(..., $P: dict, ...): ..."
+          - pattern: "def $F(..., $P: dict[$K, $V], ...): ..."
+    message: "Use Sequence/Mapping from collections.abc instead of list/dict for parameter annotations — annotate as Sequence[$T] or Mapping[$K, $V]"
     severity: WARNING
     languages: [python]
