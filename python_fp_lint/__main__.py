@@ -4,7 +4,7 @@
 import argparse
 import sys
 
-from python_fp_lint.lint_gate import LintGate
+from python_fp_lint.lint_gate import LintGate, MixedLintGate
 from python_fp_lint.reassignment_gate import ReassignmentGate
 
 
@@ -16,8 +16,9 @@ def main():
     sub = parser.add_subparsers(dest="command")
     check = sub.add_parser("check", help="Run lint checks on files")
     check.add_argument("files", nargs="+", help="Python files to check")
-    check.add_argument("--semgrep-only", action="store_true", help="Run only Semgrep/ast-grep rules")
+    check.add_argument("--semgrep-only", action="store_true", help="Run only Semgrep + tree-sitter-only ast-grep rules (MixedLintGate)")
     check.add_argument("--reassignment-only", action="store_true", help="Run only reassignment checks")
+    check.add_argument("--mixed", action="store_true", help="Use MixedLintGate (Semgrep + ast-grep) instead of pure ast-grep")
 
     args = parser.parse_args()
     if args.command != "check":
@@ -29,7 +30,8 @@ def main():
     run_reassignment = not args.semgrep_only
 
     if run_lint:
-        result = LintGate().evaluate(args.files, ".")
+        gate = MixedLintGate() if (args.mixed or args.semgrep_only) else LintGate()
+        result = gate.evaluate(args.files, ".")
         violations.extend(result.violations)
 
     if run_reassignment:
