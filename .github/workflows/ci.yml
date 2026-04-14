@@ -23,7 +23,7 @@ jobs:
 
       - name: Install ast-grep
         run: |
-          curl -fsSL https://raw.githubusercontent.com/ast-grep/ast-grep/main/install.sh | bash -s -- --to /usr/local/bin
+          npm install -g @ast-grep/cli
           sg --version
 
       - name: Install dependencies
