@@ -6,7 +6,7 @@
 **python-fp-lint** is a functional-programming linter for Python. It detects mutation, reassignment, and impurity patterns that violate FP discipline, combining three complementary analysis backends:
 
 1. **ast-grep** (27 rules) — tree-sitter AST analysis for FP-specific mutation rules
-2. **Ruff** (moderate hygiene set) — Rust-based linter for unused imports, style errors, complexity, and more
+2. **Ruff** (batteries-included + FP-specific) — Rust-based linter for unused imports, style errors, complexity, and more
 3. **beniget** — def-use chain analysis for variable reassignment detection across scopes
 
 The unified `LintGate` runs all three backends in sequence. Each backend that is available contributes violations; missing tools are silently skipped.
@@ -28,18 +28,22 @@ The unified `LintGate` runs all three backends in sequence. Each backend that is
 | **Structural** | `no-deep-nesting`, `no-loop-mutation` |
 | **Type annotations** | `no-list-dict-param-annotation`, `no-unfrozen-dataclass` |
 
-### Ruff rules (moderate hygiene set)
+### Ruff rules (batteries-included + FP-specific)
 
 | Ruff code | Category |
 |-----------|----------|
-| `F` | Pyflakes — unused imports, undefined names, unused vars |
 | `E` | pycodestyle errors |
+| `F` | Pyflakes — unused imports, undefined names, unused vars |
+| `W` | pycodestyle warnings |
+| `I` | isort — import sorting |
 | `B` | flake8-bugbear — mutable defaults, assert False |
+| `UP` | pyupgrade — deprecated syntax |
+| `SIM` | flake8-simplify — simplifiable constructs |
+| `RUF` | Ruff-specific checks |
 | `BLE` | Blind except detection |
 | `T20` | Print statement detection |
 | `TID252` | Relative import detection |
 | `C901` | Cyclomatic complexity |
-| `UP` | pyupgrade — deprecated syntax |
 
 ## Setup
 
@@ -171,6 +175,26 @@ python_fp_lint/
 ```
 
 Each backend is called in sequence: ast-grep, Ruff, beniget. Missing tools are silently skipped.
+
+## Design Decisions
+
+### Why Ruff (not Flake8)
+
+Ruff reimplements popular Flake8 plugins (pycodestyle, Pyflakes, bugbear, isort, simplify, and more) in Rust, running **10–100x faster** than Flake8 on real codebases. It ships as a single binary with built-in auto-fix — no plugin installation, no version matrix across six packages. The trade-off is that Ruff does not support custom plugins: you cannot extend it with project-specific rules. That's acceptable here because our FP-specific rules live in ast-grep, which is purpose-built for structural pattern matching.
+
+### Why ast-grep (not hand-written AST visitors)
+
+ast-grep uses tree-sitter to parse Python's concrete syntax tree and match against declarative YAML patterns. A rule like "flag `$LIST.append($ITEM)` inside a `for` loop" is a few lines of YAML; the equivalent `ast.NodeVisitor` in Python would be 50+ lines of imperative traversal code. Declarative rules are easier to review, compose (via `any:`, `all:`, `inside:`), and maintain. ast-grep is also written in Rust, so scanning 27 rules across a codebase adds negligible overhead.
+
+### Why not Semgrep
+
+Semgrep was the original backend for FP mutation rules. It was replaced because:
+
+- **Closed ecosystem.** Semgrep requires login/registration for full functionality and routes rules through their cloud registry. Local-only usage is a second-class path with friction.
+- **Performance.** Semgrep's Python-based runner is significantly slower than ast-grep for the same structural matching task.
+- **Licensing and direction.** Semgrep's shift toward a commercial platform (Semgrep Cloud, mandatory telemetry in some versions) made it a poor fit for an open-source dev tool that should work offline without accounts.
+
+ast-grep provides the same pattern-matching expressiveness with none of these constraints.
 
 ## Dependencies
 
