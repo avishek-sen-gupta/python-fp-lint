@@ -1,5 +1,6 @@
 # python-fp-lint
 
+[![CI](https://github.com/avishek-sen-gupta/python-fp-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/avishek-sen-gupta/python-fp-lint/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE.md)
 
 **python-fp-lint** is a functional-programming linter for Python. It detects mutation, reassignment, and impurity patterns that violate FP discipline, combining three complementary analysis backends:
@@ -140,6 +141,15 @@ uv run pytest tests/test_result.py -x -q
 ```
 
 The test suite includes a self-lint integration test that runs `LintGate` on this repo's own source code and verifies violations are detected.
+
+## CI
+
+GitHub Actions runs on every push to `main` and on pull requests. The pipeline tests against Python 3.10–3.13 with:
+
+1. **Black** — formatting check
+2. **pytest** — full test suite (161 tests)
+
+See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Pre-commit hook
 

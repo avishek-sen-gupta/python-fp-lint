@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install ast-grep
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/ast-grep/ast-grep/main/install.sh | bash -s -- --to /usr/local/bin
+          sg --version
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Check formatting (Black)
+        run: uv run --system black --check .
+
+      - name: Run tests
+        run: uv run --system pytest tests/ -x -q
