@@ -24,7 +24,9 @@ jobs:
           sg --version
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: |
+          uv sync --all-extras
+          uv pip install -e .
 
       - name: Check formatting (Black)
         run: uv run black --check .
