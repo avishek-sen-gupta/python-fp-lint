@@ -270,3 +270,51 @@ def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolatio
             )
         )
     return violations
+
+
+# Ruff rule selection — moderate hygiene set
+_RUFF_SELECT = "F,E,B,BLE,T20,TID252,C901,UP"
+
+
+def _find_ruff() -> str | None:
+    return shutil.which("ruff")
+
+
+def _run_ruff(ruff_path: str, files: list[str]) -> list[LintViolation]:
+    try:
+        result = subprocess.run(
+            [
+                ruff_path,
+                "check",
+                "--output-format",
+                "json",
+                "--select",
+                _RUFF_SELECT,
+            ]
+            + files,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+
+    if not result.stdout.strip():
+        return []
+
+    try:
+        entries = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return []
+
+    violations = []
+    for entry in entries:
+        violations.append(
+            LintViolation(
+                rule=entry.get("code", "unknown"),
+                file=entry.get("filename", ""),
+                line=entry.get("location", {}).get("row", 0),
+                message=entry.get("message", ""),
+            )
+        )
+    return violations

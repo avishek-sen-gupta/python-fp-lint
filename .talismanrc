@@ -16,4 +16,6 @@ fileignoreconfig:
   checksum: 93720c0b0ddde8ad640657b34f6f74190a72a3d197745ca553b568c83e4411ed
 - filename: docs/superpowers/specs/2026-04-14-semgrep-to-ruff-migration-design.md
   checksum: 3ce58859ebc2bf366222007dc85a4f8abde5acace14efc92ad3f7edca656bd1a
+- filename: tests/test_ruff_integration.py
+  checksum: 50445303bfa17bfb3265b784c85daec6d67ae01bc0c9811a8f0f140b736f1d37
 version: "1.0"
