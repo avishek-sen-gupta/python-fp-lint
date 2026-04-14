@@ -35,19 +35,21 @@ Detects variable and parameter reassignment within a single scope using def-use 
 ### Requirements
 
 - Python 3.10+
+- [uv](https://docs.astral.sh/uv/) — package manager
 - [ast-grep](https://ast-grep.github.io/) (`sg`) — required for `LintGate` (default)
 - [Semgrep](https://semgrep.dev/) — required only for `MixedLintGate`
 
 ### Install
 
 ```bash
-pip install -e ".[dev]"
+uv venv
+uv pip install -e ".[dev]"
 ```
 
 Or install just the library:
 
 ```bash
-pip install -e .
+uv pip install -e .
 ```
 
 ## Usage
@@ -56,34 +58,34 @@ pip install -e .
 
 ```bash
 # Run all checks on files
-python -m python_fp_lint check file1.py file2.py
+uv run python -m python_fp_lint check file1.py file2.py
 
 # Directories (recursive) and globs
-python -m python_fp_lint check src/
-python -m python_fp_lint check 'src/**/*.py'
-python -m python_fp_lint check src/ tests/test_foo.py 'lib/*.py'
+uv run python -m python_fp_lint check src/
+uv run python -m python_fp_lint check 'src/**/*.py'
+uv run python -m python_fp_lint check src/ tests/test_foo.py 'lib/*.py'
 
 # Semgrep + ast-grep rules only (no reassignment check)
-python -m python_fp_lint check --semgrep-only file1.py
+uv run python -m python_fp_lint check --semgrep-only file1.py
 
 # Reassignment checks only
-python -m python_fp_lint check --reassignment-only file1.py
+uv run python -m python_fp_lint check --reassignment-only file1.py
 
 # Use MixedLintGate (Semgrep + ast-grep) instead of pure ast-grep
-python -m python_fp_lint check --mixed src/
+uv run python -m python_fp_lint check --mixed src/
 ```
 
 ### JSON output (for LLM agents and toolchains)
 
 ```bash
 # Lint check with structured output
-python -m python_fp_lint --format json check src/
+uv run python -m python_fp_lint --format json check src/
 
 # List all available rules
-python -m python_fp_lint --format json rules
+uv run python -m python_fp_lint --format json rules
 
 # Get JSON schema for output formats
-python -m python_fp_lint schema
+uv run python -m python_fp_lint schema
 ```
 
 JSON check output:
@@ -127,15 +129,27 @@ for v in result.violations:
 
 ```bash
 # Run the full test suite
-python -m pytest tests/ -x -q
+uv run pytest tests/ -x -q
 
 # Individual test files
-python -m pytest tests/test_ast_grep_rules.py -x -q   # 70 tests, ~2.5s
-python -m pytest tests/test_lint_gate.py -x -q         # 53 tests, ~19s
-python -m pytest tests/test_cli.py -x -q               # 18 tests, ~7s
-python -m pytest tests/test_reassignment_gate.py -x -q
-python -m pytest tests/test_result.py -x -q
+uv run pytest tests/test_ast_grep_rules.py -x -q   # 70 tests, ~2.5s
+uv run pytest tests/test_lint_gate.py -x -q         # 53 tests, ~19s
+uv run pytest tests/test_cli.py -x -q               # 19 tests, ~7s
+uv run pytest tests/test_reassignment_gate.py -x -q
+uv run pytest tests/test_result.py -x -q
 ```
+
+The test suite includes a self-lint integration test that runs `LintGate` on this repo's own source code and verifies violations are detected.
+
+## Pre-commit hook
+
+The pre-commit hook runs:
+
+1. **Talisman** — secret detection
+2. **Black** — auto-format and re-stage
+3. **pytest** — full test suite
+
+All steps use `uv run` for consistent environments.
 
 ## Architecture
 
@@ -161,6 +175,7 @@ Each gate exposes a single method: `evaluate(changed_files, project_root) -> Lin
 | `beniget` | Def-use chain analysis (runtime) |
 | `pyyaml` | Rule metadata parsing (runtime) |
 | `pytest` | Test framework (dev) |
+| `black` | Code formatter (dev) |
 | `sg` (ast-grep) | AST-based lint rules (external tool, required for LintGate) |
 | `semgrep` | Pattern-based lint rules (external tool, required for MixedLintGate) |
 

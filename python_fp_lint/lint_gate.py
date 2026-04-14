@@ -114,6 +114,7 @@ class MixedLintGate:
 
 # --- shared helpers ---
 
+
 def _expand_paths(paths: list[str]) -> list[str]:
     """Expand directories, globs, and plain files into a flat list of paths."""
     expanded = []
@@ -134,7 +135,7 @@ def _filter_python_files(files: list[str]) -> list[str]:
     seen = set()
     result = []
     for f in _expand_paths(files):
-        real = os.path.normpath(f)
+        real = os.path.abspath(f)
         if real in seen:
             continue
         seen.add(real)
@@ -191,10 +192,13 @@ def _read_config_rules_dir() -> str | None:
         return None
 
 
-def _run_semgrep(semgrep_path: str, rules_file: str, files: list[str]) -> list[LintViolation]:
+def _run_semgrep(
+    semgrep_path: str, rules_file: str, files: list[str]
+) -> list[LintViolation]:
     try:
         result = subprocess.run(
-            [semgrep_path, "scan", "--config", rules_file, "--json", "--no-git-ignore"] + files,
+            [semgrep_path, "scan", "--config", rules_file, "--json", "--no-git-ignore"]
+            + files,
             capture_output=True,
             text=True,
             timeout=60,
@@ -212,19 +216,28 @@ def _run_semgrep(semgrep_path: str, rules_file: str, files: list[str]) -> list[L
 
     violations = []
     for entry in data.get("results", []):
-        violations.append(LintViolation(
-            rule=entry.get("check_id", "unknown").rsplit(".", 1)[-1],
-            file=entry.get("path", ""),
-            line=entry.get("start", {}).get("line", 0),
-            message=entry.get("extra", {}).get("message", ""),
-        ))
+        violations.append(
+            LintViolation(
+                rule=entry.get("check_id", "unknown").rsplit(".", 1)[-1],
+                file=entry.get("path", ""),
+                line=entry.get("start", {}).get("line", 0),
+                message=entry.get("extra", {}).get("message", ""),
+            )
+        )
     return violations
 
 
 def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolation]:
     try:
         result = subprocess.run(
-            [sg_path, "scan", "--json", "--config", os.path.join(rules_dir, "sgconfig.yml")] + files,
+            [
+                sg_path,
+                "scan",
+                "--json",
+                "--config",
+                os.path.join(rules_dir, "sgconfig.yml"),
+            ]
+            + files,
             capture_output=True,
             text=True,
             timeout=30,
@@ -248,10 +261,12 @@ def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolatio
 
     violations = []
     for entry in entries:
-        violations.append(LintViolation(
-            rule=entry.get("ruleId", "unknown"),
-            file=entry.get("file", ""),
-            line=entry.get("range", {}).get("start", {}).get("line", 0) + 1,
-            message=entry.get("message", ""),
-        ))
+        violations.append(
+            LintViolation(
+                rule=entry.get("ruleId", "unknown"),
+                file=entry.get("file", ""),
+                line=entry.get("range", {}).get("start", {}).get("line", 0) + 1,
+                message=entry.get("message", ""),
+            )
+        )
     return violations

@@ -26,12 +26,14 @@ def _ast_grep_rules() -> list[dict]:
         try:
             with open(path) as f:
                 data = yaml.safe_load(f)
-            rules.append({
-                "id": data.get("id", fname.removesuffix(".yml")),
-                "message": data.get("message", ""),
-                "severity": data.get("severity", "warning"),
-                "backend": "ast-grep",
-            })
+            rules.append(
+                {
+                    "id": data.get("id", fname.removesuffix(".yml")),
+                    "message": data.get("message", ""),
+                    "severity": data.get("severity", "warning"),
+                    "backend": "ast-grep",
+                }
+            )
         except (yaml.YAMLError, OSError):
             continue
     return rules
@@ -48,22 +50,26 @@ def _semgrep_rules() -> list[dict]:
     except (yaml.YAMLError, OSError):
         return rules
     for entry in data.get("rules", []):
-        rules.append({
-            "id": entry.get("id", "unknown"),
-            "message": entry.get("message", ""),
-            "severity": entry.get("severity", "WARNING").lower(),
-            "backend": "semgrep",
-        })
+        rules.append(
+            {
+                "id": entry.get("id", "unknown"),
+                "message": entry.get("message", ""),
+                "severity": entry.get("severity", "WARNING").lower(),
+                "backend": "semgrep",
+            }
+        )
     return rules
 
 
 def list_rules() -> list[dict]:
     """Return metadata for all available lint rules across all backends."""
     rules = _ast_grep_rules() + _semgrep_rules()
-    rules.append({
-        "id": "reassignment",
-        "message": "Variable reassignment detected — use new bindings instead",
-        "severity": "warning",
-        "backend": "beniget",
-    })
+    rules.append(
+        {
+            "id": "reassignment",
+            "message": "Variable reassignment detected — use new bindings instead",
+            "severity": "warning",
+            "backend": "beniget",
+        }
+    )
     return rules

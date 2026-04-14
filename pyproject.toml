@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "black>=24.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

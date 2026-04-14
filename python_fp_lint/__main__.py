@@ -74,17 +74,35 @@ def _run_schema(_args):
             "description": "Output of the 'check' command",
             "type": "object",
             "properties": {
-                "passed": {"type": "boolean", "description": "True if no violations found"},
-                "violation_count": {"type": "integer", "description": "Number of violations"},
+                "passed": {
+                    "type": "boolean",
+                    "description": "True if no violations found",
+                },
+                "violation_count": {
+                    "type": "integer",
+                    "description": "Number of violations",
+                },
                 "violations": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "rule": {"type": "string", "description": "Rule ID that was violated"},
-                            "file": {"type": "string", "description": "Path to the file"},
-                            "line": {"type": "integer", "description": "Line number (1-based, 0 if unknown)"},
-                            "message": {"type": "string", "description": "Human-readable violation message"},
+                            "rule": {
+                                "type": "string",
+                                "description": "Rule ID that was violated",
+                            },
+                            "file": {
+                                "type": "string",
+                                "description": "Path to the file",
+                            },
+                            "line": {
+                                "type": "integer",
+                                "description": "Line number (1-based, 0 if unknown)",
+                            },
+                            "message": {
+                                "type": "string",
+                                "description": "Human-readable violation message",
+                            },
                         },
                     },
                 },
@@ -99,7 +117,10 @@ def _run_schema(_args):
                     "id": {"type": "string"},
                     "message": {"type": "string"},
                     "severity": {"type": "string"},
-                    "backend": {"type": "string", "enum": ["ast-grep", "semgrep", "beniget"]},
+                    "backend": {
+                        "type": "string",
+                        "enum": ["ast-grep", "semgrep", "beniget"],
+                    },
                 },
             },
         },
@@ -114,7 +135,9 @@ def main():
         description="Functional-programming lint rules for Python",
     )
     parser.add_argument(
-        "--format", choices=["text", "json"], default="text",
+        "--format",
+        choices=["text", "json"],
+        default="text",
         help="Output format (default: text)",
     )
     sub = parser.add_subparsers(dest="command")
@@ -122,9 +145,19 @@ def main():
     # --- check ---
     check = sub.add_parser("check", help="Run lint checks on files")
     check.add_argument("files", nargs="+", help="Python files to check")
-    check.add_argument("--semgrep-only", action="store_true", help="Run only Semgrep + tree-sitter-only ast-grep rules")
-    check.add_argument("--reassignment-only", action="store_true", help="Run only reassignment checks")
-    check.add_argument("--mixed", action="store_true", help="Use MixedLintGate (Semgrep + ast-grep) instead of pure ast-grep")
+    check.add_argument(
+        "--semgrep-only",
+        action="store_true",
+        help="Run only Semgrep + tree-sitter-only ast-grep rules",
+    )
+    check.add_argument(
+        "--reassignment-only", action="store_true", help="Run only reassignment checks"
+    )
+    check.add_argument(
+        "--mixed",
+        action="store_true",
+        help="Use MixedLintGate (Semgrep + ast-grep) instead of pure ast-grep",
+    )
 
     # --- rules ---
     sub.add_parser("rules", help="List all available lint rules")

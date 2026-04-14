@@ -36,7 +36,10 @@ def _run_sg(filepath):
     sg = _sg_binary()
     result = subprocess.run(
         [sg, "scan", "--json", "--config", _SGCONFIG, filepath],
-        capture_output=True, text=True, timeout=30, cwd=_PKG_DIR,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=_PKG_DIR,
     )
     if not result.stdout.strip():
         return []
@@ -237,7 +240,10 @@ class TestNoneRules:
 class TestOptionalNoneRules:
 
     def test_optional_type_fails(self, tmp_path):
-        f = _make_file(tmp_path, "from typing import Optional\ndef f(x: Optional[str]):\n    pass\n")
+        f = _make_file(
+            tmp_path,
+            "from typing import Optional\ndef f(x: Optional[str]):\n    pass\n",
+        )
         assert "no-optional-none" in _run_sg(f)
 
     def test_pipe_none_fails(self, tmp_path):
@@ -249,11 +255,17 @@ class TestOptionalNoneRules:
         assert "no-optional-none" in _run_sg(f)
 
     def test_union_none_fails(self, tmp_path):
-        f = _make_file(tmp_path, "from typing import Union\ndef f(x: Union[str, None]):\n    pass\n")
+        f = _make_file(
+            tmp_path,
+            "from typing import Union\ndef f(x: Union[str, None]):\n    pass\n",
+        )
         assert "no-optional-none" in _run_sg(f)
 
     def test_union_none_reversed_fails(self, tmp_path):
-        f = _make_file(tmp_path, "from typing import Union\ndef f(x: Union[None, str]):\n    pass\n")
+        f = _make_file(
+            tmp_path,
+            "from typing import Union\ndef f(x: Union[None, str]):\n    pass\n",
+        )
         assert "no-optional-none" in _run_sg(f)
 
     def test_clean_type_passes(self, tmp_path):
@@ -261,7 +273,9 @@ class TestOptionalNoneRules:
         assert "no-optional-none" not in _run_sg(f)
 
     def test_union_without_none_passes(self, tmp_path):
-        f = _make_file(tmp_path, "from typing import Union\ndef f(x: Union[str, int]):\n    pass\n")
+        f = _make_file(
+            tmp_path, "from typing import Union\ndef f(x: Union[str, int]):\n    pass\n"
+        )
         assert "no-optional-none" not in _run_sg(f)
 
 
@@ -277,7 +291,9 @@ class TestStyleRules:
         assert "no-print" not in _run_sg(f)
 
     def test_static_method_fails(self, tmp_path):
-        f = _make_file(tmp_path, "class C:\n    @staticmethod\n    def f():\n        pass\n")
+        f = _make_file(
+            tmp_path, "class C:\n    @staticmethod\n    def f():\n        pass\n"
+        )
         assert "no-static-method" in _run_sg(f)
 
     def test_static_method_passes(self, tmp_path):
@@ -381,26 +397,29 @@ class TestAugmentedAssignmentRules:
 class TestDeepNestingRule:
 
     def test_for_in_for_fails(self, tmp_path):
-        f = _make_file(tmp_path,
+        f = _make_file(
+            tmp_path,
             "def f(matrix):\n"
             "    for row in matrix:\n"
             "        for cell in row:\n"
-            "            process(cell)\n")
+            "            process(cell)\n",
+        )
         assert "no-deep-nesting" in _run_sg(f)
 
     def test_if_in_for_fails(self, tmp_path):
-        f = _make_file(tmp_path,
+        f = _make_file(
+            tmp_path,
             "def f(items):\n"
             "    for x in items:\n"
             "        if x > 0:\n"
-            "            process(x)\n")
+            "            process(x)\n",
+        )
         assert "no-deep-nesting" in _run_sg(f)
 
     def test_flat_for_passes(self, tmp_path):
-        f = _make_file(tmp_path,
-            "def f(items):\n"
-            "    for x in items:\n"
-            "        process(x)\n")
+        f = _make_file(
+            tmp_path, "def f(items):\n" "    for x in items:\n" "        process(x)\n"
+        )
         assert "no-deep-nesting" not in _run_sg(f)
 
 
@@ -408,31 +427,33 @@ class TestDeepNestingRule:
 class TestLoopMutationRule:
 
     def test_append_in_for_fails(self, tmp_path):
-        f = _make_file(tmp_path,
+        f = _make_file(
+            tmp_path,
             "def f(items):\n"
             "    result = []\n"
             "    for x in items:\n"
-            "        result.append(x)\n")
+            "        result.append(x)\n",
+        )
         assert "no-loop-mutation" in _run_sg(f)
 
     def test_subscript_assign_in_for_fails(self, tmp_path):
-        f = _make_file(tmp_path,
-            "def f(d, keys):\n"
-            "    for k in keys:\n"
-            "        d[k] = 0\n")
+        f = _make_file(
+            tmp_path, "def f(d, keys):\n" "    for k in keys:\n" "        d[k] = 0\n"
+        )
         assert "no-loop-mutation" in _run_sg(f)
 
     def test_no_mutation_in_for_passes(self, tmp_path):
-        f = _make_file(tmp_path,
-            "def f(items):\n"
-            "    for x in items:\n"
-            "        process(x)\n")
+        f = _make_file(
+            tmp_path, "def f(items):\n" "    for x in items:\n" "        process(x)\n"
+        )
         assert "no-loop-mutation" not in _run_sg(f)
 
     def test_mutation_outside_for_passes(self, tmp_path):
-        f = _make_file(tmp_path,
+        f = _make_file(
+            tmp_path,
             "def f(items):\n"
             "    result = []\n"
             "    result.append(42)\n"
-            "    return result\n")
+            "    return result\n",
+        )
         assert "no-loop-mutation" not in _run_sg(f)

@@ -25,7 +25,8 @@ def dirty_file(tmp_path):
 def _run_check(*args):
     return subprocess.run(
         ["python3", "-m", "python_fp_lint", "check", *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
         cwd=os.path.dirname(os.path.dirname(__file__)),
     )
 
@@ -34,7 +35,8 @@ def _run_bare(*args):
     """Run without the 'check' subcommand."""
     return subprocess.run(
         ["python3", "-m", "python_fp_lint", *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
         cwd=os.path.dirname(os.path.dirname(__file__)),
     )
 
@@ -181,3 +183,19 @@ class TestSchemaCommand:
         assert "passed" in props
         assert "violations" in props
         assert "violation_count" in props
+
+
+class TestSelfLint:
+    """Run the linter on this repo's own source code."""
+
+    def test_lintgate_finds_violations_in_own_codebase(self):
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        result = _run_bare(
+            "--format", "json", "check", os.path.join(repo_root, "python_fp_lint")
+        )
+        data = json.loads(result.stdout)
+        assert data["passed"] is False
+        assert data["violation_count"] > 0
+        rules_hit = {v["rule"] for v in data["violations"]}
+        # The linter's own code uses patterns it flags
+        assert len(rules_hit) > 1, f"Expected multiple rule types, got: {rules_hit}"

@@ -19,7 +19,8 @@ class ReassignmentGate:
 
     def evaluate(self, changed_files: list[str], project_root: str) -> LintResult:
         py_files = [
-            f for f in dict.fromkeys(changed_files)
+            f
+            for f in dict.fromkeys(changed_files)
             if f.endswith(".py") and os.path.exists(f)
         ]
         if not py_files:
@@ -52,7 +53,9 @@ class ReassignmentGate:
             for chain in local_defs:
                 node = chain.node
                 name = chain.name()
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                if isinstance(
+                    node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                ):
                     continue
                 if isinstance(node, (ast.Import, ast.ImportFrom, ast.alias)):
                     continue
@@ -63,12 +66,14 @@ class ReassignmentGate:
                     for node in nodes[1:]:
                         lineno = getattr(node, "lineno", 0)
                         scope_desc = _scope_description(scope_node)
-                        violations.append(LintViolation(
-                            rule="reassignment",
-                            file=filepath,
-                            line=lineno,
-                            message=f"'{name}' reassigned (scope: {scope_desc})",
-                        ))
+                        violations.append(
+                            LintViolation(
+                                rule="reassignment",
+                                file=filepath,
+                                line=lineno,
+                                message=f"'{name}' reassigned (scope: {scope_desc})",
+                            )
+                        )
 
         return violations
 

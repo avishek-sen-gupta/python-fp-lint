@@ -6,7 +6,9 @@ from python_fp_lint.result import LintResult, LintViolation
 
 class TestLintViolation:
     def test_fields(self):
-        v = LintViolation(rule="no-print", file="app.py", line=10, message="print() found")
+        v = LintViolation(
+            rule="no-print", file="app.py", line=10, message="print() found"
+        )
         assert v.rule == "no-print"
         assert v.file == "app.py"
         assert v.line == 10
@@ -20,7 +22,9 @@ class TestLintResult:
         assert r.violations == []
 
     def test_failing_result(self):
-        v = LintViolation(rule="no-print", file="app.py", line=10, message="print() found")
+        v = LintViolation(
+            rule="no-print", file="app.py", line=10, message="print() found"
+        )
         r = LintResult(passed=False, violations=[v])
         assert r.passed is False
         assert len(r.violations) == 1

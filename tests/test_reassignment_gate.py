@@ -84,12 +84,7 @@ class TestReassignmentGateDetection:
     """Code that should FAIL — contains reassignment."""
 
     def test_variable_reassignment_in_function(self, tmp_path):
-        code = (
-            "def foo():\n"
-            "    x = 1\n"
-            "    x = 2\n"
-            "    return x\n"
-        )
+        code = "def foo():\n" "    x = 1\n" "    x = 2\n" "    return x\n"
         path = _make_file(str(tmp_path), "dirty.py", code)
         gate = ReassignmentGate()
         result = gate.evaluate([path], str(tmp_path))
@@ -97,11 +92,7 @@ class TestReassignmentGateDetection:
         assert any(v.rule == "reassignment" for v in result.violations)
 
     def test_parameter_reassignment(self, tmp_path):
-        code = (
-            "def foo(x):\n"
-            "    x = x + 1\n"
-            "    return x\n"
-        )
+        code = "def foo(x):\n" "    x = x + 1\n" "    return x\n"
         path = _make_file(str(tmp_path), "dirty.py", code)
         gate = ReassignmentGate()
         result = gate.evaluate([path], str(tmp_path))

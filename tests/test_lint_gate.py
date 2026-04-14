@@ -24,7 +24,10 @@ _PKG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "python_fp_l
 def rules_dir(tmp_path):
     """Copy the real Semgrep rules, ast-grep rules, and config into a temp directory."""
     import shutil as _shutil
-    _shutil.copy(os.path.join(_PKG_DIR, "semgrep-rules.yml"), tmp_path / "semgrep-rules.yml")
+
+    _shutil.copy(
+        os.path.join(_PKG_DIR, "semgrep-rules.yml"), tmp_path / "semgrep-rules.yml"
+    )
     src_rules = os.path.join(_PKG_DIR, "rules")
     dst_rules = tmp_path / "rules"
     dst_rules.mkdir()
@@ -106,11 +109,13 @@ class TestLintGateWithoutTools:
         gate = LintGate(rules_dir=rules_dir)
         filtered = gate.evaluate.__func__  # just test the helper
         from python_fp_lint.lint_gate import _filter_python_files
+
         assert _filter_python_files([py_path, md_path, sh_path]) == [py_path]
 
     def test_skips_nonexistent_files(self, tmp_path, rules_dir):
         fake = os.path.join(str(tmp_path), "gone.py")
         from python_fp_lint.lint_gate import _filter_python_files
+
         assert _filter_python_files([fake]) == []
 
 
@@ -125,16 +130,14 @@ class TestLintGateWithSg:
         assert result.passed is True
 
     def test_bare_except_fails(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py",
-            "try:\n    x = 1\nexcept:\n    pass\n")
+        path = _make_file(tmp_path, "widget.py", "try:\n    x = 1\nexcept:\n    pass\n")
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert result.passed is False
         assert any(v.rule == "no-bare-except" for v in result.violations)
 
     def test_violations_have_correct_fields(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py",
-            "try:\n    x = 1\nexcept:\n    pass\n")
+        path = _make_file(tmp_path, "widget.py", "try:\n    x = 1\nexcept:\n    pass\n")
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         v = result.violations[0]
@@ -150,16 +153,16 @@ class TestLintGateWithSg:
         assert result.passed is True
 
     def test_multiple_violations_reported(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py",
-            "try:\n    print('hi')\nexcept:\n    pass\n")
+        path = _make_file(
+            tmp_path, "widget.py", "try:\n    print('hi')\nexcept:\n    pass\n"
+        )
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert result.passed is False
         assert len(result.violations) >= 2
 
     def test_only_scans_touched_files(self, tmp_path, rules_dir):
-        dirty = _make_file(tmp_path, "dirty.py",
-            "try:\n    x = 1\nexcept:\n    pass\n")
+        dirty = _make_file(tmp_path, "dirty.py", "try:\n    x = 1\nexcept:\n    pass\n")
         clean = _make_file(tmp_path, "clean.py", "x = 1\n")
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([clean], str(tmp_path))
@@ -178,29 +181,38 @@ class TestLintGateWithSg:
         assert any(v.rule == "no-subscript-mutation" for v in result.violations)
 
     def test_deep_nesting_fails(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py",
+        path = _make_file(
+            tmp_path,
+            "widget.py",
             "def f(matrix):\n"
             "    for row in matrix:\n"
             "        for cell in row:\n"
-            "            process(cell)\n")
+            "            process(cell)\n",
+        )
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert any(v.rule == "no-deep-nesting" for v in result.violations)
 
     def test_loop_mutation_fails(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py",
+        path = _make_file(
+            tmp_path,
+            "widget.py",
             "def f(items):\n"
             "    result = []\n"
             "    for x in items:\n"
             "        result.append(x)\n"
-            "    return result\n")
+            "    return result\n",
+        )
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert any(v.rule == "no-loop-mutation" for v in result.violations)
 
     def test_optional_none_fails(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py",
-            "from typing import Optional\ndef f(x: Optional[str]):\n    pass\n")
+        path = _make_file(
+            tmp_path,
+            "widget.py",
+            "from typing import Optional\ndef f(x: Optional[str]):\n    pass\n",
+        )
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert any(v.rule == "no-optional-none" for v in result.violations)
@@ -292,16 +304,31 @@ from . import utils      # no-relative-import
 
 # All 26 Semgrep rule IDs — every one must fire on the fixture above.
 _ALL_SEMGREP_RULES = [
-    "no-list-append", "no-list-extend", "no-list-insert", "no-list-pop", "no-list-remove",
-    "no-dict-clear", "no-dict-update", "no-dict-setdefault",
-    "no-set-add", "no-set-discard",
-    "no-subscript-mutation", "no-subscript-del", "no-subscript-augmented-mutation",
-    "no-subscript-tuple-mutation", "no-setitem-call",
-    "no-attribute-augmented-mutation", "no-local-augmented-mutation",
-    "no-is-none", "no-is-not-none",
-    "no-none-default-param", "no-optional-none",
-    "no-bare-except", "no-except-exception",
-    "no-print", "no-static-method",
+    "no-list-append",
+    "no-list-extend",
+    "no-list-insert",
+    "no-list-pop",
+    "no-list-remove",
+    "no-dict-clear",
+    "no-dict-update",
+    "no-dict-setdefault",
+    "no-set-add",
+    "no-set-discard",
+    "no-subscript-mutation",
+    "no-subscript-del",
+    "no-subscript-augmented-mutation",
+    "no-subscript-tuple-mutation",
+    "no-setitem-call",
+    "no-attribute-augmented-mutation",
+    "no-local-augmented-mutation",
+    "no-is-none",
+    "no-is-not-none",
+    "no-none-default-param",
+    "no-optional-none",
+    "no-bare-except",
+    "no-except-exception",
+    "no-print",
+    "no-static-method",
     "no-relative-import",
 ]
 
@@ -317,6 +344,7 @@ def semgrep_violations(tmp_path_factory):
         f.write(_SEMGREP_FIXTURE)
     rules_file = os.path.join(_PKG_DIR, "semgrep-rules.yml")
     from python_fp_lint.lint_gate import _run_semgrep
+
     return _run_semgrep(shutil.which("semgrep"), rules_file, [path])
 
 
@@ -370,6 +398,7 @@ def clean_semgrep_violations(tmp_path_factory):
         f.write(_CLEAN_FIXTURE)
     rules_file = os.path.join(_PKG_DIR, "semgrep-rules.yml")
     from python_fp_lint.lint_gate import _run_semgrep
+
     return _run_semgrep(shutil.which("semgrep"), rules_file, [path])
 
 
@@ -403,23 +432,29 @@ class TestMixedLintGateIntegration:
 
     @needs_sg
     def test_deep_nesting_via_ast_grep(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py",
+        path = _make_file(
+            tmp_path,
+            "widget.py",
             "def f(matrix):\n"
             "    for row in matrix:\n"
             "        for cell in row:\n"
-            "            process(cell)\n")
+            "            process(cell)\n",
+        )
         gate = MixedLintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert any(v.rule == "no-deep-nesting" for v in result.violations)
 
     @needs_sg
     def test_loop_mutation_via_ast_grep(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py",
+        path = _make_file(
+            tmp_path,
+            "widget.py",
             "def f(items):\n"
             "    result = []\n"
             "    for x in items:\n"
             "        result.append(x)\n"
-            "    return result\n")
+            "    return result\n",
+        )
         gate = MixedLintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert any(v.rule == "no-loop-mutation" for v in result.violations)
@@ -451,9 +486,15 @@ class TestMixedLintGateIntegration:
         rule_ids = [v.rule for v in result.violations]
         assert rule_ids.count("no-list-append") == 1
 
-    def test_ast_grep_missing_semgrep_still_works(self, tmp_path, rules_dir, monkeypatch):
+    def test_ast_grep_missing_semgrep_still_works(
+        self, tmp_path, rules_dir, monkeypatch
+    ):
         original_which = shutil.which
-        monkeypatch.setattr(shutil, "which", lambda cmd: None if cmd in ("sg", "ast-grep") else original_which(cmd))
+        monkeypatch.setattr(
+            shutil,
+            "which",
+            lambda cmd: None if cmd in ("sg", "ast-grep") else original_which(cmd),
+        )
         path = _make_file(tmp_path, "widget.py", "items = []\nitems.append(1)\n")
         gate = MixedLintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
