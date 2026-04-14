@@ -7,4 +7,8 @@ fileignoreconfig:
   checksum: 4efb460104f193fd5c8d8621ec83571e4b8f289657b5a4890ea3a7744aaf7e55
 - filename: tests/test_ast_grep_rules.py
   checksum: 340117eaac5cb3549cc22ae0a682f6cc1e452c6f30a069031a5eafcd78859c5d
+- filename: tests/test_cli.py
+  checksum: 39437e8c675e15b62bda8a070ae85871f880af024e09f9bd1921b1bbf4beaedf
+- filename: python_fp_lint/__main__.py
+  checksum: 93720c0b0ddde8ad640657b34f6f74190a72a3d197745ca553b568c83e4411ed
 version: "1.0"
