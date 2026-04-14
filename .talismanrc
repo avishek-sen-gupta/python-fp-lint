@@ -1,0 +1,4 @@
+fileignoreconfig:
+- filename: tests/test_lint_gate.py
+  checksum: bddd01503fa50a01d415e590c9e646714fa59403dcf4878cbece202e949130ac
+version: "1.0"
