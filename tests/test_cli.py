@@ -121,8 +121,8 @@ class TestDirectoryAndGlob:
         assert any(v["rule"] == "no-list-append" for v in data["violations"])
 
     def test_glob_pattern(self, tmp_path):
-        (tmp_path / "a.py").write_text("print('hi')\n")
-        (tmp_path / "b.txt").write_text("print('hi')\n")
+        (tmp_path / "a.py").write_text("x = []\nx.append(1)\n")
+        (tmp_path / "b.txt").write_text("x = []\nx.append(1)\n")
         # Quoted glob — bypasses shell expansion, handled by _expand_paths
         result = _run_bare("--format", "json", "check", str(tmp_path / "*.py"))
         data = json.loads(result.stdout)
@@ -132,7 +132,7 @@ class TestDirectoryAndGlob:
     def test_mix_files_and_dirs(self, tmp_path):
         d = tmp_path / "src"
         d.mkdir()
-        (d / "mod.py").write_text("print('a')\n")
+        (d / "mod.py").write_text("x = []\nx.append(1)\n")
         f = tmp_path / "standalone.py"
         f.write_text('d = {}\nd["k"] = 1\n')
         result = _run_bare("--format", "json", "check", str(d), str(f))

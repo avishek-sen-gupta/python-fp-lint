@@ -129,19 +129,23 @@ class TestLintGateWithSg:
         result = gate.evaluate([path], str(tmp_path))
         assert result.passed is True
 
-    def test_bare_except_fails(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py", "try:\n    x = 1\nexcept:\n    pass\n")
+    def test_except_exception_fails(self, tmp_path, rules_dir):
+        path = _make_file(
+            tmp_path, "widget.py", "try:\n    x = 1\nexcept Exception:\n    pass\n"
+        )
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert result.passed is False
-        assert any(v.rule == "no-bare-except" for v in result.violations)
+        assert any(v.rule == "no-except-exception" for v in result.violations)
 
     def test_violations_have_correct_fields(self, tmp_path, rules_dir):
-        path = _make_file(tmp_path, "widget.py", "try:\n    x = 1\nexcept:\n    pass\n")
+        path = _make_file(
+            tmp_path, "widget.py", "try:\n    x = 1\nexcept Exception:\n    pass\n"
+        )
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         v = result.violations[0]
-        assert v.rule == "no-bare-except"
+        assert v.rule == "no-except-exception"
         assert "widget.py" in v.file
         assert v.line > 0
         assert v.message != ""
@@ -154,7 +158,7 @@ class TestLintGateWithSg:
 
     def test_multiple_violations_reported(self, tmp_path, rules_dir):
         path = _make_file(
-            tmp_path, "widget.py", "try:\n    print('hi')\nexcept:\n    pass\n"
+            tmp_path, "widget.py", "items = []\nitems.append(1)\nitems.pop(0)\n"
         )
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
@@ -162,7 +166,9 @@ class TestLintGateWithSg:
         assert len(result.violations) >= 2
 
     def test_only_scans_touched_files(self, tmp_path, rules_dir):
-        dirty = _make_file(tmp_path, "dirty.py", "try:\n    x = 1\nexcept:\n    pass\n")
+        dirty = _make_file(
+            tmp_path, "dirty.py", "try:\n    x = 1\nexcept Exception:\n    pass\n"
+        )
         clean = _make_file(tmp_path, "clean.py", "x = 1\n")
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([clean], str(tmp_path))
@@ -283,26 +289,17 @@ def _fn_union(x: Union[str, None]):  # no-optional-none (Union)
 # --- exceptions ---
 try:
     _z = 1
-except:                  # no-bare-except
-    pass
-
-try:
-    _z = 1
 except Exception:        # no-except-exception
     pass
 
 # --- style ---
-print("hello")           # no-print
-
 class _D:
     @staticmethod        # no-static-method
     def bar():
         pass
-
-from . import utils      # no-relative-import
 """
 
-# All 26 Semgrep rule IDs — every one must fire on the fixture above.
+# All 23 Semgrep rule IDs — every one must fire on the fixture above.
 _ALL_SEMGREP_RULES = [
     "no-list-append",
     "no-list-extend",
@@ -325,11 +322,8 @@ _ALL_SEMGREP_RULES = [
     "no-is-not-none",
     "no-none-default-param",
     "no-optional-none",
-    "no-bare-except",
     "no-except-exception",
-    "no-print",
     "no-static-method",
-    "no-relative-import",
 ]
 
 

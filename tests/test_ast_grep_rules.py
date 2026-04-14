@@ -282,14 +282,6 @@ class TestOptionalNoneRules:
 @needs_sg
 class TestStyleRules:
 
-    def test_print_fails(self, tmp_path):
-        f = _make_file(tmp_path, "print('hello')\n")
-        assert "no-print" in _run_sg(f)
-
-    def test_print_passes(self, tmp_path):
-        f = _make_file(tmp_path, "import logging\nlogging.info('hello')\n")
-        assert "no-print" not in _run_sg(f)
-
     def test_static_method_fails(self, tmp_path):
         f = _make_file(
             tmp_path, "class C:\n    @staticmethod\n    def f():\n        pass\n"
@@ -300,18 +292,6 @@ class TestStyleRules:
         f = _make_file(tmp_path, "def f():\n    pass\n")
         assert "no-static-method" not in _run_sg(f)
 
-    def test_relative_import_dot_fails(self, tmp_path):
-        f = _make_file(tmp_path, "from . import utils\n")
-        assert "no-relative-import" in _run_sg(f)
-
-    def test_relative_import_dotdot_fails(self, tmp_path):
-        f = _make_file(tmp_path, "from ..models import User\n")
-        assert "no-relative-import" in _run_sg(f)
-
-    def test_relative_import_passes(self, tmp_path):
-        f = _make_file(tmp_path, "from mypackage import utils\nimport os\n")
-        assert "no-relative-import" not in _run_sg(f)
-
 
 # ---------------------------------------------------------------------------
 # Multiline / exception rules (2)
@@ -320,14 +300,6 @@ class TestStyleRules:
 
 @needs_sg
 class TestExceptionRules:
-
-    def test_bare_except_fails(self, tmp_path):
-        f = _make_file(tmp_path, "try:\n    x = 1\nexcept:\n    pass\n")
-        assert "no-bare-except" in _run_sg(f)
-
-    def test_bare_except_passes(self, tmp_path):
-        f = _make_file(tmp_path, "try:\n    x = 1\nexcept ValueError:\n    pass\n")
-        assert "no-bare-except" not in _run_sg(f)
 
     def test_except_exception_fails(self, tmp_path):
         f = _make_file(tmp_path, "try:\n    x = 1\nexcept Exception:\n    pass\n")
