@@ -30,14 +30,14 @@ jobs:
         run: |
           uv sync --all-extras
           uv pip install -e .
-          uv pip install semgrep
+          uv pip install ruff
 
       - name: Add venv to PATH
         run: echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
 
       - name: Verify tools
         run: |
-          semgrep --version
+          ruff --version
           sg --version
 
       - name: Check formatting (Black)

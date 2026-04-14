@@ -5,15 +5,15 @@
 
 **python-fp-lint** is a functional-programming linter for Python. It detects mutation, reassignment, and impurity patterns that violate FP discipline, combining three complementary analysis backends:
 
-1. **ast-grep** (28 rules) — tree-sitter AST analysis for all lint rules, ~150x faster than Semgrep
-2. **Semgrep** (26 rules) — pattern matching alternative, used by `MixedLintGate`
+1. **ast-grep** (27 rules) — tree-sitter AST analysis for FP-specific mutation rules
+2. **Ruff** (moderate hygiene set) — Rust-based linter for unused imports, style errors, complexity, and more
 3. **beniget** — def-use chain analysis for variable reassignment detection across scopes
 
-The default `LintGate` runs all 28 rules through ast-grep alone. `MixedLintGate` is available for environments that prefer Semgrep, adding ast-grep only for the two rules Semgrep cannot express (deep nesting, loop mutation).
+The unified `LintGate` runs all three backends in sequence. Each backend that is available contributes violations; missing tools are silently skipped.
 
 ## Rules
 
-### ast-grep rules (28)
+### ast-grep rules (27)
 
 | Category | Rules |
 |----------|-------|
@@ -23,13 +23,23 @@ The default `LintGate` runs all 28 rules through ast-grep alone. `MixedLintGate`
 | **Subscript mutation** | `no-subscript-mutation`, `no-subscript-del`, `no-subscript-augmented-mutation`, `no-subscript-tuple-mutation`, `no-setitem-call` |
 | **Augmented assignment** | `no-local-augmented-mutation`, `no-attribute-augmented-mutation` |
 | **None / Optional** | `no-is-none`, `no-is-not-none`, `no-optional-none`, `no-none-default-param` |
-| **Exception handling** | `no-bare-except`, `no-except-exception` |
-| **Style** | `no-print`, `no-static-method`, `no-relative-import` |
+| **Exception handling** | `no-except-exception` |
+| **Style** | `no-static-method` |
 | **Structural** | `no-deep-nesting`, `no-loop-mutation` |
+| **Type annotations** | `no-list-dict-param-annotation`, `no-unfrozen-dataclass` |
 
-### Reassignment detection (beniget)
+### Ruff rules (moderate hygiene set)
 
-Detects variable and parameter reassignment within a single scope using def-use chain analysis. Tracks violations per scope (module, function, class).
+| Ruff code | Category |
+|-----------|----------|
+| `F` | Pyflakes — unused imports, undefined names, unused vars |
+| `E` | pycodestyle errors |
+| `B` | flake8-bugbear — mutable defaults, assert False |
+| `BLE` | Blind except detection |
+| `T20` | Print statement detection |
+| `TID252` | Relative import detection |
+| `C901` | Cyclomatic complexity |
+| `UP` | pyupgrade — deprecated syntax |
 
 ## Setup
 
@@ -37,8 +47,8 @@ Detects variable and parameter reassignment within a single scope using def-use 
 
 - Python 3.10+
 - [uv](https://docs.astral.sh/uv/) — package manager
-- [ast-grep](https://ast-grep.github.io/) (`sg`) — required for `LintGate` (default)
-- [Semgrep](https://semgrep.dev/) — required only for `MixedLintGate`
+- [ast-grep](https://ast-grep.github.io/) (`sg`) — required for FP mutation rules
+- [Ruff](https://docs.astral.sh/ruff/) — required for hygiene rules
 
 ### Install
 
@@ -65,15 +75,6 @@ uv run python -m python_fp_lint check file1.py file2.py
 uv run python -m python_fp_lint check src/
 uv run python -m python_fp_lint check 'src/**/*.py'
 uv run python -m python_fp_lint check src/ tests/test_foo.py 'lib/*.py'
-
-# Semgrep + ast-grep rules only (no reassignment check)
-uv run python -m python_fp_lint check --semgrep-only file1.py
-
-# Reassignment checks only
-uv run python -m python_fp_lint check --reassignment-only file1.py
-
-# Use MixedLintGate (Semgrep + ast-grep) instead of pure ast-grep
-uv run python -m python_fp_lint check --mixed src/
 ```
 
 ### JSON output (for LLM agents and toolchains)
@@ -111,16 +112,10 @@ Exit codes: `0` = no violations, `1` = violations found.
 ### Programmatic API
 
 ```python
-from python_fp_lint import LintGate, MixedLintGate, ReassignmentGate
+from python_fp_lint import LintGate, LintResult, LintViolation
 
-# Pure ast-grep (fast, default)
+# Unified gate — runs ast-grep + Ruff + beniget
 result = LintGate().evaluate(["src/app.py"], project_root=".")
-
-# Semgrep + ast-grep
-result = MixedLintGate().evaluate(["src/app.py"], project_root=".")
-
-# Reassignment
-result = ReassignmentGate().evaluate(["src/app.py"], project_root=".")
 
 for v in result.violations:
     print(f"[{v.rule}] {v.file}:{v.line} — {v.message}")
@@ -133,9 +128,9 @@ for v in result.violations:
 uv run pytest tests/ -x -q
 
 # Individual test files
-uv run pytest tests/test_ast_grep_rules.py -x -q   # 70 tests, ~2.5s
-uv run pytest tests/test_lint_gate.py -x -q         # 53 tests, ~19s
-uv run pytest tests/test_cli.py -x -q               # 19 tests, ~7s
+uv run pytest tests/test_ast_grep_rules.py -x -q   # 63 tests
+uv run pytest tests/test_lint_gate.py -x -q         # 24 tests
+uv run pytest tests/test_cli.py -x -q               # 17 tests
 uv run pytest tests/test_reassignment_gate.py -x -q
 uv run pytest tests/test_result.py -x -q
 ```
@@ -147,7 +142,7 @@ The test suite includes a self-lint integration test that runs `LintGate` on thi
 GitHub Actions runs on every push to `main` and on pull requests. The pipeline tests on Python 3.13 with:
 
 1. **Black** — formatting check
-2. **pytest** — full test suite (161 tests)
+2. **pytest** — full test suite (132 tests)
 
 See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
@@ -165,18 +160,17 @@ All steps use `uv run` for consistent environments.
 
 ```
 python_fp_lint/
-├── lint_gate.py           # LintGate (pure ast-grep) + MixedLintGate (Semgrep + ast-grep)
-├── reassignment_gate.py   # beniget def-use chain analysis
+├── lint_gate.py           # Unified LintGate (ast-grep + Ruff + beniget)
+├── reassignment_gate.py   # beniget def-use chain analysis (called by LintGate)
 ├── result.py              # LintResult, LintViolation dataclasses
 ├── rules_meta.py          # Rule metadata reader (for CLI rules/schema commands)
-├── __init__.py            # Public API exports
+├── __init__.py            # Public API: LintGate, LintResult, LintViolation
 ├── __main__.py            # CLI entry point (text + JSON output)
-├── semgrep-rules.yml      # 26 Semgrep pattern rules (used by MixedLintGate)
 ├── sgconfig.yml           # ast-grep configuration
-└── rules/                 # 28 ast-grep rule files (.yml)
+└── rules/                 # 27 ast-grep rule files (.yml)
 ```
 
-Each gate exposes a single method: `evaluate(changed_files, project_root) -> LintResult`. Gates are independent and composable — use one, both, or plug them into a larger pipeline.
+Each backend is called in sequence: ast-grep, Ruff, beniget. Missing tools are silently skipped.
 
 ## Dependencies
 
@@ -186,8 +180,8 @@ Each gate exposes a single method: `evaluate(changed_files, project_root) -> Lin
 | `pyyaml` | Rule metadata parsing (runtime) |
 | `pytest` | Test framework (dev) |
 | `black` | Code formatter (dev) |
-| `sg` (ast-grep) | AST-based lint rules (external tool, required for LintGate) |
-| `semgrep` | Pattern-based lint rules (external tool, required for MixedLintGate) |
+| `sg` (ast-grep) | AST-based FP mutation rules (external tool) |
+| `ruff` | Hygiene lint rules (external tool) |
 
 ## License
 
