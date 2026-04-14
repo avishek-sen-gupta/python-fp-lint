@@ -10,10 +10,6 @@ def _rules_dir() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "rules")
 
 
-def _semgrep_rules_file() -> str:
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "semgrep-rules.yml")
-
-
 def _ast_grep_rules() -> list[dict]:
     rules = []
     rdir = _rules_dir()
