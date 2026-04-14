@@ -6,6 +6,7 @@ MixedLintGate runs Semgrep for pattern rules, plus ast-grep for the two
 rules that require tree-sitter-specific features (stopBy, has+kind).
 """
 
+import glob
 import json
 import os
 import shutil
@@ -113,16 +114,32 @@ class MixedLintGate:
 
 # --- shared helpers ---
 
+def _expand_paths(paths: list[str]) -> list[str]:
+    """Expand directories, globs, and plain files into a flat list of paths."""
+    expanded = []
+    for p in paths:
+        if os.path.isdir(p):
+            for root, _dirs, files in os.walk(p):
+                for f in files:
+                    expanded.append(os.path.join(root, f))
+        elif any(c in p for c in ("*", "?", "[")):
+            expanded.extend(glob.glob(p, recursive=True))
+        else:
+            expanded.append(p)
+    return expanded
+
+
 def _filter_python_files(files: list[str]) -> list[str]:
-    """Filter to existing, unique .py files."""
+    """Expand dirs/globs, then filter to existing, unique .py files."""
     seen = set()
     result = []
-    for f in files:
-        if f in seen:
+    for f in _expand_paths(files):
+        real = os.path.normpath(f)
+        if real in seen:
             continue
-        seen.add(f)
-        if f.endswith(".py") and os.path.exists(f):
-            result.append(f)
+        seen.add(real)
+        if real.endswith(".py") and os.path.exists(real):
+            result.append(real)
     return result
 
 

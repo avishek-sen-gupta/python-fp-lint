@@ -1,6 +1,7 @@
 # tests/test_cli.py
-"""CLI integration tests for python -m python_fp_lint check."""
+"""CLI integration tests for python -m python_fp_lint."""
 
+import json
 import os
 import subprocess
 
@@ -80,3 +81,103 @@ class TestCLI:
         result = _run_check("--reassignment-only", str(f))
         assert result.returncode == 1
         assert "violation" in result.stdout
+
+
+class TestJSONOutput:
+    def test_clean_file_json(self, clean_file):
+        result = _run_bare("--format", "json", "check", clean_file)
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert data["passed"] is True
+        assert data["violation_count"] == 0
+        assert data["violations"] == []
+
+    def test_dirty_file_json(self, dirty_file):
+        result = _run_bare("--format", "json", "check", dirty_file)
+        assert result.returncode == 1
+        data = json.loads(result.stdout)
+        assert data["passed"] is False
+        assert data["violation_count"] > 0
+        v = data["violations"][0]
+        assert set(v.keys()) == {"rule", "file", "line", "message"}
+        assert isinstance(v["line"], int)
+
+    def test_json_output_is_valid_json(self, dirty_file):
+        result = _run_bare("--format", "json", "check", dirty_file)
+        json.loads(result.stdout)  # must not raise
+
+
+class TestDirectoryAndGlob:
+    def test_directory_recursive(self, tmp_path):
+        sub = tmp_path / "pkg"
+        sub.mkdir()
+        (sub / "a.py").write_text("x = []\nx.append(1)\n")
+        result = _run_bare("--format", "json", "check", str(tmp_path))
+        data = json.loads(result.stdout)
+        assert data["violation_count"] >= 1
+        assert any(v["rule"] == "no-list-append" for v in data["violations"])
+
+    def test_glob_pattern(self, tmp_path):
+        (tmp_path / "a.py").write_text("print('hi')\n")
+        (tmp_path / "b.txt").write_text("print('hi')\n")
+        # Quoted glob — bypasses shell expansion, handled by _expand_paths
+        result = _run_bare("--format", "json", "check", str(tmp_path / "*.py"))
+        data = json.loads(result.stdout)
+        assert data["violation_count"] >= 1
+        assert all(v["file"].endswith(".py") for v in data["violations"])
+
+    def test_mix_files_and_dirs(self, tmp_path):
+        d = tmp_path / "src"
+        d.mkdir()
+        (d / "mod.py").write_text("print('a')\n")
+        f = tmp_path / "standalone.py"
+        f.write_text('d = {}\nd["k"] = 1\n')
+        result = _run_bare("--format", "json", "check", str(d), str(f))
+        data = json.loads(result.stdout)
+        files = {v["file"] for v in data["violations"]}
+        assert len(files) == 2
+
+
+class TestRulesCommand:
+    def test_rules_text(self):
+        result = _run_bare("rules")
+        assert result.returncode == 0
+        assert "ast-grep" in result.stdout
+        assert "semgrep" in result.stdout
+        assert "beniget" in result.stdout
+
+    def test_rules_json(self):
+        result = _run_bare("--format", "json", "rules")
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, list)
+        assert len(data) > 0
+        backends = {r["backend"] for r in data}
+        assert backends == {"ast-grep", "semgrep", "beniget"}
+        for r in data:
+            assert set(r.keys()) == {"id", "message", "severity", "backend"}
+
+    def test_rules_includes_known_rules(self):
+        result = _run_bare("--format", "json", "rules")
+        data = json.loads(result.stdout)
+        ids = {r["id"] for r in data}
+        assert "no-list-append" in ids
+        assert "no-deep-nesting" in ids
+        assert "reassignment" in ids
+
+
+class TestSchemaCommand:
+    def test_schema_is_valid_json(self):
+        result = _run_bare("schema")
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert "check_output" in data
+        assert "rules_output" in data
+
+    def test_schema_describes_violations(self):
+        result = _run_bare("schema")
+        data = json.loads(result.stdout)
+        props = data["check_output"]["properties"]
+        assert "passed" in props
+        assert "violations" in props
+        assert "violation_count" in props
