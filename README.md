@@ -144,7 +144,7 @@ The test suite includes a self-lint integration test that runs `LintGate` on thi
 
 ## CI
 
-GitHub Actions runs on every push to `main` and on pull requests. The pipeline tests against Python 3.10–3.13 with:
+GitHub Actions runs on every push to `main` and on pull requests. The pipeline tests on Python 3.13 with:
 
 1. **Black** — formatting check
 2. **pytest** — full test suite (161 tests)
