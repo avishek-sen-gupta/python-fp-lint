@@ -1,4 +1,10 @@
 fileignoreconfig:
+- filename: python_fp_lint/rules/no-subscript-tuple-mutation.yml
+  checksum: bc4e007df83db563ef5b3ede3cf3a628d8262855b51a0bdd9d792c1ff4e91eb8
+- filename: python_fp_lint/lint_gate.py
+  checksum: 5366f43bcc3514cb105fc50fd1d2da16aff4ce2925f52a8c3b793f7cf48bddd0
 - filename: tests/test_lint_gate.py
-  checksum: bddd01503fa50a01d415e590c9e646714fa59403dcf4878cbece202e949130ac
+  checksum: 4efb460104f193fd5c8d8621ec83571e4b8f289657b5a4890ea3a7744aaf7e55
+- filename: tests/test_ast_grep_rules.py
+  checksum: 340117eaac5cb3549cc22ae0a682f6cc1e452c6f30a069031a5eafcd78859c5d
 version: "1.0"
