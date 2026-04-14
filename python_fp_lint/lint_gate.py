@@ -10,8 +10,8 @@ import subprocess
 from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.result import LintResult, LintViolation
 
-# Ruff rule selection — moderate hygiene set
-_RUFF_SELECT = "F,E,B,BLE,T20,TID252,C901,UP"
+# Ruff rule selection — batteries-included + FP-specific
+_RUFF_SELECT = "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901"
 
 
 class LintGate:

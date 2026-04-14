@@ -37,14 +37,8 @@ def _ast_grep_rules() -> list[dict]:
 
 def _ruff_rules() -> list[dict]:
     """Return metadata for Ruff rules selected in LintGate._RUFF_SELECT."""
-    # Ruff rule codes selected in LintGate: F, E, B, BLE, T20, TID252, C901, UP
+    # Ruff rule codes selected in LintGate: E, F, W, I, B, UP, SIM, RUF, BLE, T20, TID252, C901
     return [
-        {
-            "id": "F",
-            "message": "Pyflakes checks",
-            "severity": "error",
-            "backend": "ruff",
-        },
         {
             "id": "E",
             "message": "pycodestyle (PEP 8) error checks",
@@ -52,8 +46,44 @@ def _ruff_rules() -> list[dict]:
             "backend": "ruff",
         },
         {
+            "id": "F",
+            "message": "Pyflakes checks",
+            "severity": "error",
+            "backend": "ruff",
+        },
+        {
+            "id": "W",
+            "message": "pycodestyle (PEP 8) warning checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "I",
+            "message": "isort import sorting checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
             "id": "B",
             "message": "flake8-bugbear checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "UP",
+            "message": "pyupgrade checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "SIM",
+            "message": "flake8-simplify checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "RUF",
+            "message": "Ruff-specific checks",
             "severity": "warning",
             "backend": "ruff",
         },
@@ -78,12 +108,6 @@ def _ruff_rules() -> list[dict]:
         {
             "id": "C901",
             "message": "McCabe complexity checks",
-            "severity": "warning",
-            "backend": "ruff",
-        },
-        {
-            "id": "UP",
-            "message": "pyupgrade checks",
             "severity": "warning",
             "backend": "ruff",
         },
