@@ -87,6 +87,21 @@ for v in result.violations:
     print(f"[{v.rule}] {v.file}:{v.line} — {v.message}")
 ```
 
+## Testing
+
+```bash
+# Run the full test suite
+python -m pytest tests/ -x -q
+
+# Run a specific test file
+python -m pytest tests/test_lint_gate.py -x -q
+python -m pytest tests/test_reassignment_gate.py -x -q
+python -m pytest tests/test_cli.py -x -q
+python -m pytest tests/test_result.py -x -q
+```
+
+Tests are pure unit tests — they do not shell out to Semgrep or ast-grep. Install dev dependencies first: `pip install -e ".[dev]"`.
+
 ## Architecture
 
 ```
