@@ -292,3 +292,111 @@ class TestUnifiedGateIntegration:
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert result.passed is True
+
+
+# ===========================================================================
+# Rule configuration
+# ===========================================================================
+
+
+@needs_ruff
+class TestRuffSelectConfig:
+    def test_constructor_overrides_default(self, tmp_path, rules_dir):
+        path = _make_file(tmp_path, "widget.py", "import os\nx = 1\n")
+        # F401 (unused import) is in default set — restrict to E only
+        gate = LintGate(rules_dir=rules_dir, ruff_select="E")
+        result = gate.evaluate([path], str(tmp_path))
+        assert not any(v.rule == "F401" for v in result.violations)
+
+    def test_config_json_overrides_default(self, tmp_path, rules_dir, monkeypatch):
+        path = _make_file(tmp_path, "widget.py", "import os\nx = 1\n")
+        monkeypatch.setattr(
+            "python_fp_lint.lint_gate._read_config",
+            lambda key: "E" if key == "ruff_select" else None,
+        )
+        gate = LintGate(rules_dir=rules_dir)
+        result = gate.evaluate([path], str(tmp_path))
+        assert not any(v.rule == "F401" for v in result.violations)
+
+    def test_constructor_overrides_config_json(self, tmp_path, rules_dir, monkeypatch):
+        path = _make_file(tmp_path, "widget.py", "import os\nx = 1\n")
+        # config says E only, constructor says F — F should win
+        monkeypatch.setattr(
+            "python_fp_lint.lint_gate._read_config",
+            lambda key: "E" if key == "ruff_select" else None,
+        )
+        gate = LintGate(rules_dir=rules_dir, ruff_select="F")
+        result = gate.evaluate([path], str(tmp_path))
+        assert any(v.rule == "F401" for v in result.violations)
+
+
+@needs_sg
+class TestAstGrepRulesConfig:
+    def test_constructor_filters_rules(self, tmp_path, rules_dir):
+        path = _make_file(
+            tmp_path,
+            "widget.py",
+            "items = []\nitems.append(1)\nd = {}\nd['k'] = 'v'\n",
+        )
+        # Only enable no-list-append, not no-subscript-mutation
+        gate = LintGate(rules_dir=rules_dir, ast_grep_rules=["no-list-append"])
+        result = gate.evaluate([path], str(tmp_path))
+        ast_grep = [
+            v
+            for v in result.violations
+            if not v.rule[0].isupper() and v.rule != "reassignment"
+        ]
+        assert all(v.rule == "no-list-append" for v in ast_grep)
+        assert not any(v.rule == "no-subscript-mutation" for v in result.violations)
+
+    def test_config_json_filters_rules(self, tmp_path, rules_dir, monkeypatch):
+        path = _make_file(tmp_path, "widget.py", "items = []\nitems.append(1)\n")
+        monkeypatch.setattr(
+            "python_fp_lint.lint_gate._read_config",
+            lambda key: ["no-list-append"] if key == "ast_grep_rules" else None,
+        )
+        gate = LintGate(rules_dir=rules_dir)
+        result = gate.evaluate([path], str(tmp_path))
+        ast_grep = [
+            v
+            for v in result.violations
+            if not v.rule[0].isupper() and v.rule != "reassignment"
+        ]
+        assert len(ast_grep) > 0
+        assert all(v.rule == "no-list-append" for v in ast_grep)
+
+    def test_constructor_overrides_config_json(self, tmp_path, rules_dir, monkeypatch):
+        path = _make_file(
+            tmp_path,
+            "widget.py",
+            "items = []\nitems.append(1)\nd = {}\nd['k'] = 'v'\n",
+        )
+        # config says no-list-append only, constructor says no-subscript-mutation
+        monkeypatch.setattr(
+            "python_fp_lint.lint_gate._read_config",
+            lambda key: ["no-list-append"] if key == "ast_grep_rules" else None,
+        )
+        gate = LintGate(rules_dir=rules_dir, ast_grep_rules=["no-subscript-mutation"])
+        result = gate.evaluate([path], str(tmp_path))
+        ast_grep = [
+            v
+            for v in result.violations
+            if not v.rule[0].isupper() and v.rule != "reassignment"
+        ]
+        assert any(v.rule == "no-subscript-mutation" for v in ast_grep)
+        assert not any(v.rule == "no-list-append" for v in ast_grep)
+
+    def test_none_means_all_rules(self, tmp_path, rules_dir):
+        path = _make_file(
+            tmp_path,
+            "widget.py",
+            "items = []\nitems.append(1)\nd = {}\nd['k'] = 'v'\n",
+        )
+        gate = LintGate(rules_dir=rules_dir, ast_grep_rules=None)
+        result = gate.evaluate([path], str(tmp_path))
+        ast_grep_rules = {
+            v.rule
+            for v in result.violations
+            if not v.rule[0].isupper() and v.rule != "reassignment"
+        }
+        assert len(ast_grep_rules) >= 2

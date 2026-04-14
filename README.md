@@ -81,6 +81,37 @@ uv run python -m python_fp_lint check 'src/**/*.py'
 uv run python -m python_fp_lint check src/ tests/test_foo.py 'lib/*.py'
 ```
 
+### Configuring rules
+
+Rules can be configured via CLI flags, `config.json`, or the Python API. Resolution order: CLI/constructor > `config.json` > built-in defaults.
+
+**CLI flags:**
+
+```bash
+# Only run specific Ruff rule groups
+uv run python -m python_fp_lint check --ruff-select "E,F,W" src/
+
+# Only enable specific ast-grep rules
+uv run python -m python_fp_lint check --ast-grep-rules "no-list-append,no-dict-update" src/
+```
+
+**config.json** (place next to the package, see `config.example.json`):
+
+```json
+{
+  "ruff_select": "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901",
+  "ast_grep_rules": ["no-list-append", "no-dict-update"]
+}
+```
+
+**Python API:**
+
+```python
+gate = LintGate(ruff_select="E,F", ast_grep_rules=["no-list-append"])
+```
+
+Omitting a key (or passing `None`) uses all available rules for that backend.
+
 ### JSON output (for LLM agents and toolchains)
 
 ```bash

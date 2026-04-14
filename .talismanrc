@@ -5,9 +5,9 @@ fileignoreconfig:
 - filename: python_fp_lint/rules/no-subscript-tuple-mutation.yml
   checksum: bc4e007df83db563ef5b3ede3cf3a628d8262855b51a0bdd9d792c1ff4e91eb8
 - filename: python_fp_lint/lint_gate.py
-  checksum: fd646435eecaddc9c804c4eecbbc2cc8057e3da1cfbf21f3e187f467fdbb0160
+  checksum: c3df68e1a2359f635d9805b957241ab0840ba62bd6fc40722c3ce328aa7eafea
 - filename: tests/test_lint_gate.py
-  checksum: ce642c32265e21fa1055bf9cae3ee2f1babcf15627109b7a0eff9a49f3b45b02
+  checksum: 72db83368b59c1b011874e3d5f7d7528e1d6d20e90d577cc98492ef1894ecf41
 - filename: tests/test_ast_grep_rules.py
   checksum: ca6595de34fc46fba3c63c71a93acab85c436e1a499607a9ebf3db87e13809a4
 - filename: tests/test_cli.py

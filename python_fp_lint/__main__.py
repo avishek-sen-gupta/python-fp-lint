@@ -13,7 +13,13 @@ from python_fp_lint.rules_meta import list_rules
 
 
 def _run_check(args):
-    gate = LintGate()
+    ast_grep_rules = None
+    if args.ast_grep_rules:
+        ast_grep_rules = [r.strip() for r in args.ast_grep_rules.split(",")]
+    gate = LintGate(
+        ruff_select=args.ruff_select or None,
+        ast_grep_rules=ast_grep_rules,
+    )
     result = gate.evaluate(args.files, ".")
     violations = result.violations
 
@@ -135,6 +141,16 @@ def main():
     # --- check ---
     check = sub.add_parser("check", help="Run lint checks on files")
     check.add_argument("files", nargs="+", help="Python files to check")
+    check.add_argument(
+        "--ruff-select",
+        default=None,
+        help="Comma-separated Ruff rule codes (overrides config.json and default)",
+    )
+    check.add_argument(
+        "--ast-grep-rules",
+        default=None,
+        help="Comma-separated ast-grep rule IDs to enable (overrides config.json)",
+    )
 
     # --- rules ---
     sub.add_parser("rules", help="List all available lint rules")

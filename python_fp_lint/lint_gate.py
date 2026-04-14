@@ -11,14 +11,21 @@ from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.result import LintResult, LintViolation
 
 # Ruff rule selection — batteries-included + FP-specific
-_RUFF_SELECT = "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901"
+_DEFAULT_RUFF_SELECT = "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901"
 
 
 class LintGate:
     """Unified lint gate — runs ast-grep, Ruff, and beniget reassignment detection."""
 
-    def __init__(self, rules_dir: str | None = None):
+    def __init__(
+        self,
+        rules_dir: str | None = None,
+        ruff_select: str | None = None,
+        ast_grep_rules: list[str] | None = None,
+    ):
         self.rules_dir = rules_dir
+        self.ruff_select = ruff_select
+        self.ast_grep_rules = ast_grep_rules
 
     def evaluate(self, changed_files: list[str], project_root: str) -> LintResult:
         py_files = _filter_python_files(changed_files)
@@ -31,6 +38,14 @@ class LintGate:
         violations.extend(self._run_reassignment(py_files, project_root))
 
         return LintResult(passed=len(violations) == 0, violations=violations)
+
+    def _resolve_ast_grep_rules(self) -> list[str] | None:
+        if self.ast_grep_rules is not None:
+            return self.ast_grep_rules
+        config_val = _read_config("ast_grep_rules")
+        if config_val and isinstance(config_val, list):
+            return config_val
+        return None
 
     def _run_ast_grep(self, files: list[str], project_root: str) -> list[LintViolation]:
         rules_dir = self._resolve_rules_dir(project_root)
@@ -45,13 +60,25 @@ class LintGate:
         if not os.path.exists(sgconfig):
             return []
 
-        return _run_sg(sg, rules_dir, files)
+        violations = _run_sg(sg, rules_dir, files)
+        allowed = self._resolve_ast_grep_rules()
+        if allowed is not None:
+            violations = [v for v in violations if v.rule in allowed]
+        return violations
+
+    def _resolve_ruff_select(self) -> str:
+        if self.ruff_select:
+            return self.ruff_select
+        config_select = _read_config_ruff_select()
+        if config_select:
+            return config_select
+        return _DEFAULT_RUFF_SELECT
 
     def _run_ruff(self, files: list[str]) -> list[LintViolation]:
         ruff = _find_ruff()
         if ruff is None:
             return []
-        return _run_ruff(ruff, files)
+        return _run_ruff(ruff, files, self._resolve_ruff_select())
 
     def _run_reassignment(
         self, files: list[str], project_root: str
@@ -127,8 +154,8 @@ def _resolve_rules_dir(explicit_dir: str | None, project_root: str) -> str | Non
     return None
 
 
-def _read_config_rules_dir() -> str | None:
-    """Read lint_rules_dir from the plugin config.json."""
+def _read_config(key: str) -> str | None:
+    """Read a value from the plugin config.json."""
     config_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "config.json",
@@ -137,9 +164,17 @@ def _read_config_rules_dir() -> str | None:
         return None
     try:
         with open(config_path) as f:
-            return json.load(f).get("lint_rules_dir")
+            return json.load(f).get(key)
     except (json.JSONDecodeError, OSError):
         return None
+
+
+def _read_config_rules_dir() -> str | None:
+    return _read_config("lint_rules_dir")
+
+
+def _read_config_ruff_select() -> str | None:
+    return _read_config("ruff_select")
 
 
 def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolation]:
@@ -187,7 +222,7 @@ def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolatio
     return violations
 
 
-def _run_ruff(ruff_path: str, files: list[str]) -> list[LintViolation]:
+def _run_ruff(ruff_path: str, files: list[str], select: str) -> list[LintViolation]:
     try:
         result = subprocess.run(
             [
@@ -196,7 +231,7 @@ def _run_ruff(ruff_path: str, files: list[str]) -> list[LintViolation]:
                 "--output-format",
                 "json",
                 "--select",
-                _RUFF_SELECT,
+                select,
             ]
             + files,
             capture_output=True,
