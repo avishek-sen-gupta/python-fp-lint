@@ -1,0 +1,258 @@
+rules:
+  # --- Simple pattern rules (16) ---
+
+  - id: no-list-append
+    pattern: $OBJ.append(...)
+    message: "list.append() — use list concatenation or comprehension"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-list-extend
+    pattern: $LIST.extend(...)
+    message: "list.extend() — use list concatenation"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-list-insert
+    pattern: $LIST.insert(...)
+    message: "list.insert() — use list slicing + concatenation"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-list-pop
+    pattern: $LIST.pop(...)
+    message: "list.pop() — use list slicing"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-list-remove
+    pattern: $LIST.remove(...)
+    message: "list.remove() — use list comprehension filter"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-dict-clear
+    pattern: $DICT.clear()
+    message: "dict.clear() — reassign to empty dict instead"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-dict-update
+    pattern: $DICT.update(...)
+    message: "dict.update() — use {**d, **other} merge"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-dict-setdefault
+    pattern: $DICT.setdefault(...)
+    message: "dict.setdefault() — use explicit conditional or defaultdict at construction"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-set-add
+    pattern: $SET.add(...)
+    message: "set.add() — use set union"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-set-discard
+    pattern: $SET.discard(...)
+    message: "set.discard() — use set difference"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-subscript-mutation
+    pattern: $OBJ[$KEY] = $VAL
+    message: "Subscript mutation — use comprehensions or immutable update patterns"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-subscript-del
+    pattern: del $OBJ[$KEY]
+    message: "Subscript deletion — use comprehensions or immutable update patterns"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-is-none
+    pattern: $X is None
+    message: "is None check — use structural pattern matching or Option type"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-is-not-none
+    pattern: $X is not None
+    message: "is not None check — use structural pattern matching or Option type"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-print
+    pattern: print(...)
+    message: "print() — use logging instead"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-static-method
+    pattern: "@staticmethod"
+    message: "@staticmethod — use module-level functions instead"
+    severity: WARNING
+    languages: [python]
+
+  # --- Multiline pattern rules (2) ---
+
+  - id: no-bare-except
+    pattern: |
+      try:
+          ...
+      except:
+          ...
+    message: "Bare except: — catch specific exceptions"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-except-exception
+    pattern: |
+      try:
+          ...
+      except Exception:
+          ...
+    message: "except Exception: — catch specific exceptions"
+    severity: WARNING
+    languages: [python]
+
+  # --- pattern-either rules (5) ---
+
+  - id: no-relative-import
+    patterns:
+      - pattern-either:
+          - pattern: "from . import $X"
+          - pattern: "from .. import $X"
+          - pattern: "from .$MOD import $X"
+          - pattern: "from ..$MOD import $X"
+    message: "Relative import — use absolute imports"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-setitem-call
+    patterns:
+      - pattern-either:
+          - pattern: $OBJ.__setitem__($KEY, $VAL)
+          - pattern: $TYPE.__setitem__($OBJ, $KEY, $VAL)
+    message: "__setitem__() call — use comprehensions or immutable update patterns"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-subscript-augmented-mutation
+    patterns:
+      - pattern-either:
+          - pattern: $OBJ[$KEY] += $VAL
+          - pattern: $OBJ[$KEY] -= $VAL
+          - pattern: $OBJ[$KEY] *= $VAL
+          - pattern: $OBJ[$KEY] /= $VAL
+          - pattern: $OBJ[$KEY] //= $VAL
+          - pattern: $OBJ[$KEY] **= $VAL
+          - pattern: $OBJ[$KEY] %= $VAL
+          - pattern: $OBJ[$KEY] &= $VAL
+          - pattern: $OBJ[$KEY] |= $VAL
+          - pattern: $OBJ[$KEY] ^= $VAL
+          - pattern: $OBJ[$KEY] >>= $VAL
+          - pattern: $OBJ[$KEY] <<= $VAL
+    message: "Subscript augmented mutation — use immutable update patterns"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-subscript-tuple-mutation
+    patterns:
+      - pattern-either:
+          - pattern: $OBJ[$KEY], ... = ...
+          - pattern: ..., $OBJ[$KEY] = ...
+    message: "Tuple subscript mutation — use immutable update patterns"
+    severity: WARNING
+    languages: [python]
+
+  - id: no-attribute-augmented-mutation
+    patterns:
+      - pattern-either:
+          - pattern: $OBJ.$ATTR += $VAL
+          - pattern: $OBJ.$ATTR -= $VAL
+          - pattern: $OBJ.$ATTR *= $VAL
+          - pattern: $OBJ.$ATTR /= $VAL
+          - pattern: $OBJ.$ATTR //= $VAL
+          - pattern: $OBJ.$ATTR **= $VAL
+          - pattern: $OBJ.$ATTR %= $VAL
+          - pattern: $OBJ.$ATTR &= $VAL
+          - pattern: $OBJ.$ATTR |= $VAL
+          - pattern: $OBJ.$ATTR ^= $VAL
+          - pattern: $OBJ.$ATTR >>= $VAL
+          - pattern: $OBJ.$ATTR <<= $VAL
+    message: "Attribute augmented mutation — use immutable update patterns"
+    severity: WARNING
+    languages: [python]
+
+  # --- pattern-either + pattern-not rule (1) ---
+
+  - id: no-local-augmented-mutation
+    patterns:
+      - pattern-either:
+          - pattern: $VAR += $VAL
+          - pattern: $VAR -= $VAL
+          - pattern: $VAR *= $VAL
+          - pattern: $VAR /= $VAL
+          - pattern: $VAR //= $VAL
+          - pattern: $VAR **= $VAL
+          - pattern: $VAR %= $VAL
+          - pattern: $VAR &= $VAL
+          - pattern: $VAR |= $VAL
+          - pattern: $VAR ^= $VAL
+          - pattern: $VAR >>= $VAL
+          - pattern: $VAR <<= $VAL
+      - pattern-not: $OBJ.$ATTR += $VAL
+      - pattern-not: $OBJ.$ATTR -= $VAL
+      - pattern-not: $OBJ.$ATTR *= $VAL
+      - pattern-not: $OBJ.$ATTR /= $VAL
+      - pattern-not: $OBJ.$ATTR //= $VAL
+      - pattern-not: $OBJ.$ATTR **= $VAL
+      - pattern-not: $OBJ.$ATTR %= $VAL
+      - pattern-not: $OBJ.$ATTR &= $VAL
+      - pattern-not: $OBJ.$ATTR |= $VAL
+      - pattern-not: $OBJ.$ATTR ^= $VAL
+      - pattern-not: $OBJ.$ATTR >>= $VAL
+      - pattern-not: $OBJ.$ATTR <<= $VAL
+      - pattern-not: $OBJ[$KEY] += $VAL
+      - pattern-not: $OBJ[$KEY] -= $VAL
+      - pattern-not: $OBJ[$KEY] *= $VAL
+      - pattern-not: $OBJ[$KEY] /= $VAL
+      - pattern-not: $OBJ[$KEY] //= $VAL
+      - pattern-not: $OBJ[$KEY] **= $VAL
+      - pattern-not: $OBJ[$KEY] %= $VAL
+      - pattern-not: $OBJ[$KEY] &= $VAL
+      - pattern-not: $OBJ[$KEY] |= $VAL
+      - pattern-not: $OBJ[$KEY] ^= $VAL
+      - pattern-not: $OBJ[$KEY] >>= $VAL
+      - pattern-not: $OBJ[$KEY] <<= $VAL
+    message: "Local augmented mutation — use immutable update patterns"
+    severity: WARNING
+    languages: [python]
+
+  # --- pattern-inside rule (1) ---
+
+  - id: no-none-default-param
+    pattern: |
+      def $F(..., $PARAM=None, ...):
+          ...
+    message: "None default parameter — use empty structures or sentinel objects"
+    severity: WARNING
+    languages: [python]
+
+  # --- New rule (1) ---
+
+  - id: no-optional-none
+    patterns:
+      - pattern-either:
+          - pattern: "Optional[$T]"
+          - pattern: "$T | None"
+          - pattern: "None | $T"
+          - pattern: "Union[$T, None]"
+          - pattern: "Union[None, $T]"
+    message: "Avoid Optional/None unions — use sentinel values or separate code paths"
+    severity: WARNING
+    languages: [python]
