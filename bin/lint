@@ -1,0 +1,48 @@
+#!/bin/sh
+# lint — CLI for python-fp-lint PreToolUse gate.
+# Usage:
+#   lint on     — enable lint gate
+#   lint off    — disable lint gate
+#   lint        — toggle (no argument)
+#   lint status — show current state (JSON)
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/../hooks/lib/hash.sh"
+
+LINT_DIR="/tmp/ctx-lint"
+mkdir -p "$LINT_DIR"
+LOCK="$LINT_DIR/$(project_hash "$PWD")"
+ARG="${1:-}"
+
+case "$ARG" in
+  status)
+    if [ -f "$LOCK" ]; then
+      echo '{"active": true}'
+    else
+      echo '{"active": false}'
+    fi
+    ;;
+  on)
+    touch "$LOCK"
+    echo '{"active": true}'
+    ;;
+  off)
+    rm -f "$LOCK"
+    echo '{"active": false}'
+    ;;
+  "")
+    if [ -f "$LOCK" ]; then
+      rm "$LOCK"
+      echo '{"active": false}'
+    else
+      touch "$LOCK"
+      echo '{"active": true}'
+    fi
+    ;;
+  *)
+    echo "Usage: lint [on|off|status]" >&2
+    exit 1
+    ;;
+esac
