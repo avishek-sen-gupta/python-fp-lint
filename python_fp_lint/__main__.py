@@ -8,6 +8,7 @@ import argparse
 import json
 import sys
 
+from python_fp_lint.hook_check import main as _hook_check_main
 from python_fp_lint.lint_gate import LintGate
 from python_fp_lint.rules_meta import list_rules
 
@@ -158,6 +159,12 @@ def main():
     # --- schema ---
     sub.add_parser("schema", help="Print JSON schema for check/rules output")
 
+    # --- hook-check ---
+    sub.add_parser(
+        "hook-check",
+        help="Read a PreToolUse event JSON from stdin and exit 0 (allow) or 2 (block)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "check":
@@ -166,6 +173,8 @@ def main():
         _run_rules(args)
     elif args.command == "schema":
         _run_schema(args)
+    elif args.command == "hook-check":
+        _hook_check_main()
     else:
         parser.print_help()
         sys.exit(1)
