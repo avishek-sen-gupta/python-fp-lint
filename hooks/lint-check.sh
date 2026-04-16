@@ -13,8 +13,9 @@ LOCK="/tmp/ctx-lint/$(project_hash "$PWD")"
 
 # python-fp-lint must be available
 LINT_CMD=""
-if command -v uv >/dev/null 2>&1; then
-    LINT_CMD="uv run python -m python_fp_lint"
+VENV_PYTHON="$HOOK_DIR/../venv/bin/python"
+if [ -x "$VENV_PYTHON" ]; then
+    LINT_CMD="$VENV_PYTHON -m python_fp_lint"
 elif python3 -m python_fp_lint --help >/dev/null 2>&1; then
     LINT_CMD="python3 -m python_fp_lint"
 fi

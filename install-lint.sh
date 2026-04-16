@@ -28,6 +28,11 @@ cp "$PLUGIN_DIR/hooks/lib/hash.sh" ~/.claude/plugins/python-fp-lint/hooks/lib/
 cp "$PLUGIN_DIR/hooks/lint-check.sh" ~/.claude/plugins/python-fp-lint/hooks/
 chmod +x ~/.claude/plugins/python-fp-lint/hooks/lint-check.sh
 
+# --- create dedicated venv with python-fp-lint ---
+echo "Creating plugin venv..."
+python3 -m venv ~/.claude/plugins/python-fp-lint/venv
+~/.claude/plugins/python-fp-lint/venv/bin/pip install -e "$PLUGIN_DIR" --quiet
+
 # --- install CLI ---
 echo "Installing lint CLI..."
 mkdir -p ~/.claude/plugins/python-fp-lint/bin
