@@ -156,6 +156,36 @@ for v in result.violations:
     print(f"[{v.rule}] {v.file}:{v.line} — {v.message}")
 ```
 
+## Claude Code lint gate
+
+A PreToolUse hook blocks `Edit` and `Write` tool calls that would introduce new FP violations. Pre-existing violations are ignored — only regressions are blocked (Option B diff).
+
+### Install
+
+Run from the root of the project you want to protect (must have a `.claude/` directory):
+
+```bash
+# From the python-fp-lint repo
+./install-lint.sh
+```
+
+This copies the hook to `~/.claude/plugins/python-fp-lint/` and wires `Edit` and `Write` matchers into `.claude/settings.json`.
+
+Requires: `jq`, `python-fp-lint` reachable via `uv run python -m python_fp_lint`.
+
+### Usage
+
+```bash
+/lint on      # enable gate for this project
+/lint off     # disable gate
+/lint status  # check state
+/lint         # toggle
+```
+
+The gate is **off by default**. Lock file: `/tmp/ctx-lint/<md5-of-pwd>`.
+
+When a violation is introduced, the tool call is blocked with a message listing the new violations. Fix them or disable the gate with `/lint off`.
+
 ## Testing
 
 ```bash
@@ -203,6 +233,18 @@ python_fp_lint/
 ├── __main__.py            # CLI entry point (text + JSON output)
 ├── sgconfig.yml           # ast-grep configuration
 └── rules/                 # 27 ast-grep rule files (.yml)
+
+hooks/
+├── lint-check.sh          # Claude Code PreToolUse hook (Edit + Write)
+└── lib/hash.sh            # Portable MD5 helper for lock file paths
+
+bin/
+└── lint                   # on/off/status/toggle CLI
+
+commands/
+└── lint.md                # /lint slash command for Claude Code
+
+install-lint.sh            # Wires hook into a project's .claude/settings.json
 ```
 
 Each backend is called in sequence: ast-grep, Ruff, beniget. Missing tools are silently skipped.
