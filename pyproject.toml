@@ -11,5 +11,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "black>=24.0"]
 
+[tool.setuptools.packages.find]
+include = ["python_fp_lint*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
