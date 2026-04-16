@@ -19,5 +19,5 @@ fileignoreconfig:
 - filename: tests/test_ruff_integration.py
   checksum: 50445303bfa17bfb3265b784c85daec6d67ae01bc0c9811a8f0f140b736f1d37
 - filename: hooks/lint-check.sh
-  checksum: b4211dc2cea6671acce7c07ff58275b3c9291baabffedfa26c7032eea93110a7
+  checksum: a5dbbcc8a010e74e802d1cfcfb628c52b9493107868829309856d5cfe2e5c5ce
 version: "1.0"

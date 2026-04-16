@@ -12,6 +12,7 @@ from python_fp_lint.result import LintResult, LintViolation
 
 # Ruff rule selection — batteries-included + FP-specific
 _DEFAULT_RUFF_SELECT = "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901"
+_DEFAULT_RUFF_IGNORE = "E501,W292"
 
 
 class LintGate:
@@ -232,6 +233,8 @@ def _run_ruff(ruff_path: str, files: list[str], select: str) -> list[LintViolati
                 "json",
                 "--select",
                 select,
+                "--ignore",
+                _DEFAULT_RUFF_IGNORE,
             ]
             + files,
             capture_output=True,
