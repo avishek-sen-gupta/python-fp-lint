@@ -4,5 +4,6 @@ rule:
   any:
     - pattern: $OBJ.__setitem__($KEY, $VAL)
     - pattern: $TYPE.__setitem__($OBJ, $KEY, $VAL)
-message: "__setitem__() call — use comprehensions or immutable update patterns"
+    - pattern: $MOD.setitem($OBJ, $KEY, $VAL)
+message: "__setitem__() / operator.setitem() call — use comprehensions or immutable update patterns"
 severity: warning
