@@ -196,11 +196,15 @@ class TestSubscriptMutationRules:
         assert "no-setitem-call" in _run_sg(f)
 
     def test_operator_setitem_fails(self, tmp_path):
-        f = _make_file(tmp_path, "import operator\nd = {}\noperator.setitem(d, 'k', 'v')\n")
+        f = _make_file(
+            tmp_path, "import operator\nd = {}\noperator.setitem(d, 'k', 'v')\n"
+        )
         assert "no-setitem-call" in _run_sg(f)
 
     def test_operator_setitem_aliased_fails(self, tmp_path):
-        f = _make_file(tmp_path, "import operator as op\nd = {}\nop.setitem(d, 'k', 'v')\n")
+        f = _make_file(
+            tmp_path, "import operator as op\nd = {}\nop.setitem(d, 'k', 'v')\n"
+        )
         assert "no-setitem-call" in _run_sg(f)
 
     def test_setitem_call_passes(self, tmp_path):
