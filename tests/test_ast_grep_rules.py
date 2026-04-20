@@ -448,9 +448,7 @@ class TestLoopMutationRule:
 # (rule lives in rules/disabled/ and is skipped until re-enabled)
 # ---------------------------------------------------------------------------
 
-_DISABLED_SGCONFIG = os.path.join(
-    _PKG_DIR, "rules", "disabled", "sgconfig.yml"
-)
+_DISABLED_SGCONFIG = os.path.join(_PKG_DIR, "rules", "disabled", "sgconfig.yml")
 
 _VACUOUS_SGCONFIG = os.path.join(_PKG_DIR, "rules", "disabled")
 
@@ -478,9 +476,7 @@ def _run_sg_disabled(filepath):
 
 
 needs_vacuous = pytest.mark.skipif(
-    not os.path.exists(
-        os.path.join(_PKG_DIR, "rules", "disabled", "test-vacuous.yml")
-    ),
+    not os.path.exists(os.path.join(_PKG_DIR, "rules", "disabled", "test-vacuous.yml")),
     reason="test-vacuous rule is disabled (move to rules/ to enable)",
 )
 
