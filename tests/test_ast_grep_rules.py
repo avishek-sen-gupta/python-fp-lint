@@ -445,55 +445,93 @@ class TestLoopMutationRule:
 
 # ---------------------------------------------------------------------------
 # Vacuous test rule — flags test_* functions with no value-comparison assertion
+# (rule lives in rules/disabled/ and is skipped until re-enabled)
 # ---------------------------------------------------------------------------
+
+_DISABLED_SGCONFIG = os.path.join(
+    _PKG_DIR, "rules", "disabled", "sgconfig.yml"
+)
+
+_VACUOUS_SGCONFIG = os.path.join(_PKG_DIR, "rules", "disabled")
+
+
+def _run_sg_disabled(filepath):
+    """Run ast-grep against the disabled rules directory."""
+    sg = _sg_binary()
+    rule = os.path.join(_PKG_DIR, "rules", "disabled", "test-vacuous.yml")
+    if not os.path.exists(rule):
+        return []
+    result = subprocess.run(
+        [sg, "scan", "--json", "--rule", rule, filepath],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=_PKG_DIR,
+    )
+    if not result.stdout.strip():
+        return []
+    try:
+        entries = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        entries = []
+    return [e.get("ruleId", "unknown") for e in entries]
+
+
+needs_vacuous = pytest.mark.skipif(
+    not os.path.exists(
+        os.path.join(_PKG_DIR, "rules", "disabled", "test-vacuous.yml")
+    ),
+    reason="test-vacuous rule is disabled (move to rules/ to enable)",
+)
 
 
 @needs_sg
+@needs_vacuous
 class TestVacuousTestRule:
 
     def test_only_assert_in_fails(self, tmp_path):
         f = _make_file(tmp_path, 'def test_foo():\n    assert "err" in messages\n')
-        assert "test-vacuous" in _run_sg(f)
+        assert "test-vacuous" in _run_sg_disabled(f)
 
     def test_only_isinstance_fails(self, tmp_path):
         f = _make_file(
             tmp_path, "def test_foo():\n    assert isinstance(result, dict)\n"
         )
-        assert "test-vacuous" in _run_sg(f)
+        assert "test-vacuous" in _run_sg_disabled(f)
 
     def test_only_assert_true_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    assert True\n")
-        assert "test-vacuous" in _run_sg(f)
+        assert "test-vacuous" in _run_sg_disabled(f)
 
     def test_only_bare_assert_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    assert result\n")
-        assert "test-vacuous" in _run_sg(f)
+        assert "test-vacuous" in _run_sg_disabled(f)
 
     def test_no_assert_at_all_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    x = compute()\n")
-        assert "test-vacuous" in _run_sg(f)
+        assert "test-vacuous" in _run_sg_disabled(f)
 
     def test_assert_eq_passes(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    assert result == expected\n")
-        assert "test-vacuous" not in _run_sg(f)
+        assert "test-vacuous" not in _run_sg_disabled(f)
 
     def test_assert_neq_passes(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    assert a != b\n")
-        assert "test-vacuous" not in _run_sg(f)
+        assert "test-vacuous" not in _run_sg_disabled(f)
 
     def test_assert_lt_passes(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    assert a < b\n")
-        assert "test-vacuous" not in _run_sg(f)
+        assert "test-vacuous" not in _run_sg_disabled(f)
 
     def test_assert_lte_passes(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    assert a <= b\n")
-        assert "test-vacuous" not in _run_sg(f)
+        assert "test-vacuous" not in _run_sg_disabled(f)
 
     def test_mixed_weak_and_strong_passes(self, tmp_path):
         code = 'def test_foo():\n    assert "err" in messages\n    assert result == expected\n'
         f = _make_file(tmp_path, code)
-        assert "test-vacuous" not in _run_sg(f)
+        assert "test-vacuous" not in _run_sg_disabled(f)
 
     def test_non_test_function_not_flagged(self, tmp_path):
         f = _make_file(tmp_path, "def helper():\n    assert True\n")
-        assert "test-vacuous" not in _run_sg(f)
+        assert "test-vacuous" not in _run_sg_disabled(f)
