@@ -441,3 +441,59 @@ class TestLoopMutationRule:
             "    return result\n",
         )
         assert "no-loop-mutation" not in _run_sg(f)
+
+
+# ---------------------------------------------------------------------------
+# Vacuous test rule — flags test_* functions with no value-comparison assertion
+# ---------------------------------------------------------------------------
+
+
+@needs_sg
+class TestVacuousTestRule:
+
+    def test_only_assert_in_fails(self, tmp_path):
+        f = _make_file(tmp_path, 'def test_foo():\n    assert "err" in messages\n')
+        assert "test-vacuous" in _run_sg(f)
+
+    def test_only_isinstance_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path, "def test_foo():\n    assert isinstance(result, dict)\n"
+        )
+        assert "test-vacuous" in _run_sg(f)
+
+    def test_only_assert_true_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_foo():\n    assert True\n")
+        assert "test-vacuous" in _run_sg(f)
+
+    def test_only_bare_assert_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_foo():\n    assert result\n")
+        assert "test-vacuous" in _run_sg(f)
+
+    def test_no_assert_at_all_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_foo():\n    x = compute()\n")
+        assert "test-vacuous" in _run_sg(f)
+
+    def test_assert_eq_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def test_foo():\n    assert result == expected\n")
+        assert "test-vacuous" not in _run_sg(f)
+
+    def test_assert_neq_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def test_foo():\n    assert a != b\n")
+        assert "test-vacuous" not in _run_sg(f)
+
+    def test_assert_lt_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def test_foo():\n    assert a < b\n")
+        assert "test-vacuous" not in _run_sg(f)
+
+    def test_assert_lte_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def test_foo():\n    assert a <= b\n")
+        assert "test-vacuous" not in _run_sg(f)
+
+    def test_mixed_weak_and_strong_passes(self, tmp_path):
+        code = 'def test_foo():\n    assert "err" in messages\n    assert result == expected\n'
+        f = _make_file(tmp_path, code)
+        assert "test-vacuous" not in _run_sg(f)
+
+    def test_non_test_function_not_flagged(self, tmp_path):
+        f = _make_file(tmp_path, "def helper():\n    assert True\n")
+        assert "test-vacuous" not in _run_sg(f)
