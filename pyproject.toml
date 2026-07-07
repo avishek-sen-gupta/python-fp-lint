@@ -14,5 +14,8 @@ dev = ["pytest>=8.0", "black>=24.0"]
 [tool.setuptools.packages.find]
 include = ["python_fp_lint*"]
 
+[tool.setuptools.package-data]
+python_fp_lint = ["sgconfig.yml", "rules/*.yml", "rules/disabled/*.yml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
