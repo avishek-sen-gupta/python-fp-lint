@@ -292,6 +292,44 @@ class TestOptionalNoneRules:
 
 
 @needs_sg
+class TestNoAnyTypeRule:
+
+    def test_bare_any_param_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path, "from typing import Any\ndef f(x: Any):\n    pass\n"
+        )
+        assert "no-any-type" in _run_sg(f)
+
+    def test_any_return_type_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path, "from typing import Any\ndef f() -> Any:\n    pass\n"
+        )
+        assert "no-any-type" in _run_sg(f)
+
+    def test_any_in_generic_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "from typing import Any\ndef f(x: dict[str, Any]):\n    pass\n",
+        )
+        assert "no-any-type" in _run_sg(f)
+
+    def test_any_variable_annotation_fails(self, tmp_path):
+        f = _make_file(tmp_path, "from typing import Any\nx: Any = 1\n")
+        assert "no-any-type" in _run_sg(f)
+
+    def test_clean_type_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def f(x: str) -> int:\n    return 1\n")
+        assert "no-any-type" not in _run_sg(f)
+
+    def test_identifier_containing_any_as_substring_passes(self, tmp_path):
+        """`Any` as a word inside a longer identifier must not false-positive."""
+        f = _make_file(
+            tmp_path, "class CompanyName:\n    pass\n\nx: CompanyName\n"
+        )
+        assert "no-any-type" not in _run_sg(f)
+
+
+@needs_sg
 class TestStyleRules:
 
     def test_static_method_fails(self, tmp_path):

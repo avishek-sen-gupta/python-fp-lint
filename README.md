@@ -13,7 +13,7 @@ The unified `LintGate` runs all three backends in sequence. Each backend that is
 
 ## Rules
 
-### ast-grep rules (27)
+### ast-grep rules (28)
 
 | Category | Rules |
 |----------|-------|
@@ -26,7 +26,12 @@ The unified `LintGate` runs all three backends in sequence. Each backend that is
 | **Exception handling** | `no-except-exception` |
 | **Style** | `no-static-method` |
 | **Structural** | `no-deep-nesting`, `no-loop-mutation` |
-| **Type annotations** | `no-list-dict-param-annotation`, `no-unfrozen-dataclass` |
+| **Type annotations** | `no-list-dict-param-annotation`, `no-unfrozen-dataclass`, `no-any-type` |
+
+`no-any-type` bans *explicit* `typing.Any` usage only (`x: Any`, `-> Any`, `dict[str, Any]`, ...).
+It cannot see *implicit* Any from missing annotations (e.g. `def f(x):`) — pyright's
+`reportUnknownParameterType`/`reportMissingParameterType`/`reportUnknownVariableType` cover that
+complementary case and are not duplicated here.
 
 ### Ruff rules (batteries-included + FP-specific)
 

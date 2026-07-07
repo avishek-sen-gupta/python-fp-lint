@@ -28,6 +28,7 @@
     "no-deep-nesting",
     "no-loop-mutation",
     "no-list-dict-param-annotation",
-    "no-unfrozen-dataclass"
+    "no-unfrozen-dataclass",
+    "no-any-type"
   ]
 }
