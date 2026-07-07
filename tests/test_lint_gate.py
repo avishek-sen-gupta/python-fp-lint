@@ -64,6 +64,114 @@ class TestResolveRulesDir:
 
 
 # ===========================================================================
+# Rules-dir materialization (ast-grep ignores rule files under a gitignored
+# path, e.g. a consumer's own .venv where this package is normally
+# installed -- regardless of --no-ignore flags). Rules must be copied to a
+# stable location outside any consumer's git tree before scanning.
+# ===========================================================================
+
+
+class TestMaterializeRulesDir:
+    def _make_rules_source(self, tmp_path, name="rules_src", rule_text="id: r1\n"):
+        source = tmp_path / name
+        rules = source / "rules"
+        rules.mkdir(parents=True)
+        (rules / "r1.yml").write_text(rule_text)
+        (source / "sgconfig.yml").write_text("ruleDirs:\n  - rules\n")
+        return str(source)
+
+    def test_copies_rule_files_to_cache_root(self, tmp_path):
+        from python_fp_lint.lint_gate import _materialize_rules_dir
+
+        source = self._make_rules_source(tmp_path)
+        cache_root = str(tmp_path / "cache")
+
+        target = _materialize_rules_dir(source, cache_root)
+
+        assert os.path.exists(os.path.join(target, "sgconfig.yml"))
+        assert os.path.exists(os.path.join(target, "rules", "r1.yml"))
+
+    def test_materialized_dir_is_outside_the_source_tree(self, tmp_path):
+        from python_fp_lint.lint_gate import _materialize_rules_dir
+
+        source = self._make_rules_source(tmp_path)
+        cache_root = str(tmp_path / "cache")
+
+        target = _materialize_rules_dir(source, cache_root)
+
+        assert not target.startswith(source)
+        assert target.startswith(cache_root)
+
+    def test_is_idempotent_for_unchanged_source(self, tmp_path):
+        from python_fp_lint.lint_gate import _materialize_rules_dir
+
+        source = self._make_rules_source(tmp_path)
+        cache_root = str(tmp_path / "cache")
+
+        first = _materialize_rules_dir(source, cache_root)
+        second = _materialize_rules_dir(source, cache_root)
+
+        assert first == second
+        assert os.path.exists(os.path.join(second, "rules", "r1.yml"))
+
+    def test_refreshes_cache_when_source_content_changes(self, tmp_path):
+        from python_fp_lint.lint_gate import _materialize_rules_dir
+
+        source = self._make_rules_source(tmp_path, rule_text="id: r1\n")
+        cache_root = str(tmp_path / "cache")
+        first = _materialize_rules_dir(source, cache_root)
+        assert open(os.path.join(first, "rules", "r1.yml")).read() == "id: r1\n"
+
+        # Change the source rule content -- a different signature/cache entry
+        (tmp_path / "rules_src" / "rules" / "r1.yml").write_text("id: r1\nchanged: true\n")
+
+        second = _materialize_rules_dir(source, cache_root)
+        assert (
+            open(os.path.join(second, "rules", "r1.yml")).read()
+            == "id: r1\nchanged: true\n"
+        )
+
+
+@needs_sg
+class TestAstGrepIgnoresGitignoredRulesDir:
+    """Regression test for the real-world bug: ast-grep silently finds zero
+    violations when the rules directory lives under a path excluded by the
+    enclosing git repo's .gitignore -- e.g. installed into a project's own
+    .venv -- regardless of --no-ignore flags. This reproduces that exact
+    layout and asserts the gate still finds violations."""
+
+    def test_finds_violations_when_rules_dir_is_gitignored(self, tmp_path):
+        import subprocess as _subprocess
+
+        repo = tmp_path / "consumer_repo"
+        repo.mkdir()
+        _subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        (repo / ".gitignore").write_text("ignored_deps/\n")
+
+        # Rules live under a path this repo's own .gitignore excludes, with a
+        # nested self-ignoring .gitignore ("*") inside it -- the exact layout
+        # `uv`/`venv` generate for .venv/. This nested marker (not just the
+        # parent entry) is what actually triggers ast-grep's silent skip.
+        rules_src = repo / "ignored_deps" / "python_fp_lint"
+        rules_dir = rules_src / "rules"
+        rules_dir.mkdir(parents=True)
+        (repo / "ignored_deps" / ".gitignore").write_text("*\n")
+        shutil.copy(
+            os.path.join(_PKG_DIR, "rules", "no-list-append.yml"),
+            rules_dir / "no-list-append.yml",
+        )
+        (rules_src / "sgconfig.yml").write_text("ruleDirs:\n  - rules\n")
+
+        target = repo / "widget.py"
+        target.write_text("items = []\nitems.append(1)\n")
+
+        gate = LintGate(rules_dir=str(rules_src))
+        result = gate.evaluate([str(target)], str(repo))
+
+        assert any(v.rule == "no-list-append" for v in result.violations)
+
+
+# ===========================================================================
 # LintGate API
 # ===========================================================================
 

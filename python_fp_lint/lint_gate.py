@@ -2,6 +2,7 @@
 """Unified LintGate — runs ast-grep + Ruff + beniget in sequence."""
 
 import glob
+import hashlib
 import json
 import os
 import shutil
@@ -23,10 +24,12 @@ class LintGate:
         rules_dir: str | None = None,
         ruff_select: str | None = None,
         ast_grep_rules: list[str] | None = None,
+        rules_cache_root: str | None = None,
     ):
         self.rules_dir = rules_dir
         self.ruff_select = ruff_select
         self.ast_grep_rules = ast_grep_rules
+        self.rules_cache_root = rules_cache_root
 
     def evaluate(self, changed_files: list[str], project_root: str) -> LintResult:
         py_files = _filter_python_files(changed_files)
@@ -61,7 +64,8 @@ class LintGate:
         if not os.path.exists(sgconfig):
             return []
 
-        violations = _run_sg(sg, rules_dir, files)
+        materialized_dir = _materialize_rules_dir(rules_dir, self.rules_cache_root)
+        violations = _run_sg(sg, materialized_dir, files)
         allowed = self._resolve_ast_grep_rules()
         if allowed is not None:
             violations = [v for v in violations if v.rule in allowed]
@@ -121,6 +125,43 @@ def _filter_python_files(files: list[str]) -> list[str]:
         if real.endswith(".py") and os.path.exists(real):
             result.append(real)
     return result
+
+
+def _default_rules_cache_root() -> str:
+    return os.path.join(os.path.expanduser("~"), ".cache", "python_fp_lint", "rules")
+
+
+def _rules_signature(rules_dir: str) -> str:
+    """Content hash of every file under rules_dir, used as its cache key."""
+    digest = hashlib.sha256()
+    for root, _dirs, files in sorted(os.walk(rules_dir)):
+        for name in sorted(files):
+            path = os.path.join(root, name)
+            digest.update(os.path.relpath(path, rules_dir).encode())
+            with open(path, "rb") as f:
+                digest.update(f.read())
+    return digest.hexdigest()
+
+
+def _materialize_rules_dir(source_dir: str, cache_root: str | None) -> str:
+    """Copy rules_dir to a stable location outside any consumer's git tree.
+
+    ast-grep silently finds zero matches for rule files that live under a
+    path excluded by the enclosing git repo's .gitignore -- e.g. a project's
+    own .venv, where this package is normally installed -- regardless of
+    --no-ignore flags. Scanning always uses a copy under the cache root
+    instead, which is never inside a consumer's tree.
+    """
+    root = cache_root or _default_rules_cache_root()
+    target = os.path.join(root, _rules_signature(source_dir))
+    if not os.path.isdir(target):
+        tmp_target = target + ".tmp"
+        if os.path.isdir(tmp_target):
+            shutil.rmtree(tmp_target)
+        os.makedirs(root, exist_ok=True)
+        shutil.copytree(source_dir, tmp_target)
+        os.replace(tmp_target, target)
+    return target
 
 
 def _find_sg() -> str | None:
