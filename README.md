@@ -13,7 +13,7 @@ The unified `LintGate` runs all three backends in sequence. Each backend that is
 
 ## Rules
 
-### ast-grep rules (28)
+### ast-grep rules (27)
 
 | Category | Rules |
 |----------|-------|
@@ -23,7 +23,6 @@ The unified `LintGate` runs all three backends in sequence. Each backend that is
 | **Subscript mutation** | `no-subscript-mutation`, `no-subscript-del`, `no-subscript-augmented-mutation`, `no-subscript-tuple-mutation`, `no-setitem-call` |
 | **Augmented assignment** | `no-local-augmented-mutation`, `no-attribute-augmented-mutation` |
 | **None / Optional** | `no-is-none`, `no-is-not-none`, `no-optional-none`, `no-none-default-param` |
-| **Exception handling** | `no-except-exception` |
 | **Style** | `no-static-method` |
 | **Structural** | `no-deep-nesting`, `no-loop-mutation` |
 | **Type annotations** | `no-list-dict-param-annotation`, `no-unfrozen-dataclass`, `no-any-type` |
@@ -45,10 +44,11 @@ complementary case and are not duplicated here.
 | `UP` | pyupgrade — deprecated syntax |
 | `SIM` | flake8-simplify — simplifiable constructs |
 | `RUF` | Ruff-specific checks |
-| `BLE` | Blind except detection |
+| `BLE` | Blind except detection — catches `except Exception:`/`except BaseException:`; replaces the old `no-except-exception` ast-grep rule |
 | `T20` | Print statement detection |
 | `TID252` | Relative import detection |
 | `C901` | Cyclomatic complexity |
+| `ANN401` | Explicit `Any` in function parameter and return annotations — partial overlap with `no-any-type`, which also covers variable annotations and `Any` nested in generics |
 
 ## Setup
 

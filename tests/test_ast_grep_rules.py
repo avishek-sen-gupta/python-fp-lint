@@ -344,23 +344,6 @@ class TestStyleRules:
 
 
 # ---------------------------------------------------------------------------
-# Multiline / exception rules (2)
-# ---------------------------------------------------------------------------
-
-
-@needs_sg
-class TestExceptionRules:
-
-    def test_except_exception_fails(self, tmp_path):
-        f = _make_file(tmp_path, "try:\n    x = 1\nexcept Exception:\n    pass\n")
-        assert "no-except-exception" in _run_sg(f)
-
-    def test_except_exception_passes(self, tmp_path):
-        f = _make_file(tmp_path, "try:\n    x = 1\nexcept ValueError:\n    pass\n")
-        assert "no-except-exception" not in _run_sg(f)
-
-
-# ---------------------------------------------------------------------------
 # Augmented assignment rules (2 — attribute + local with pattern-not)
 # ---------------------------------------------------------------------------
 
