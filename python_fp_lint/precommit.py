@@ -1,23 +1,19 @@
 # python_fp_lint/precommit.py
-"""Pre-commit gate — lint the staged content, report only newly added lines.
+"""Pre-commit gate — lint the staged content of every staged Python file.
 
-Two things separate this from a plain `check` over the staged filenames:
+What separates this from a plain `check` over the staged filenames is that it
+lints the *staged blob* (`git show :path`), not the worktree file. Those differ
+whenever a file is partially staged, and the commit records the blob.
 
-1. It lints the *staged blob* (`git show :path`), not the worktree file. Those
-   differ whenever a file is partially staged, and the commit records the blob.
-2. It filters violations to lines added by the staged diff, so an existing
-   codebase can adopt the gate without first fixing every pre-existing
-   violation. `--all-lines` turns the filter off.
+Every violation in a staged file blocks the commit, including ones that predate
+the change being committed.
 """
 
 import os
-import re
 import subprocess
 
 from python_fp_lint.lint_gate import LintGate
 from python_fp_lint.result import LintResult, LintViolation
-
-_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
 def _git(repo_root: str, *args: str) -> str:
@@ -37,45 +33,6 @@ def staged_python_files(repo_root: str) -> list[str]:
     """Repo-relative paths of staged .py files (added/copied/modified/renamed)."""
     out = _git(repo_root, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z")
     return [p for p in out.split("\0") if p.endswith(".py")]
-
-
-def _hunk_range(line: str) -> tuple[int, int] | None:
-    """Post-image range of one hunk header, or None if not one / pure deletion."""
-    match = _HUNK_RE.match(line)
-    if match is None:
-        return None
-    start = int(match.group(1))
-    count = 1 if match.group(2) is None else int(match.group(2))
-    if count == 0:  # pure deletion — nothing added at this position
-        return None
-    return start, start + count - 1
-
-
-def parse_added_ranges(diff_text: str) -> list[tuple[int, int]]:
-    """Post-image line ranges added by a unified diff, from its hunk headers."""
-    return [
-        r
-        for r in (_hunk_range(line) for line in diff_text.splitlines())
-        if r is not None
-    ]
-
-
-def added_line_ranges(repo_root: str, path: str) -> list[tuple[int, int]]:
-    diff = _git(repo_root, "diff", "--cached", "-U0", "--", path)
-    return parse_added_ranges(diff)
-
-
-def _in_any_range(line: int, ranges: list[tuple[int, int]]) -> bool:
-    return any(start <= line <= end for start, end in ranges)
-
-
-def filter_to_added_lines(
-    violations: list[LintViolation], ranges_by_file: dict[str, list[tuple[int, int]]]
-) -> list[LintViolation]:
-    """Keep only violations landing on a line the staged diff added."""
-    return [
-        v for v in violations if _in_any_range(v.line, ranges_by_file.get(v.file, []))
-    ]
 
 
 def materialize_staged(repo_root: str, paths: list[str], dest: str) -> dict[str, str]:
@@ -109,7 +66,6 @@ def evaluate_staged(
     workdir: str,
     gate: LintGate,
     paths: list[str] | None = None,
-    diff_only: bool = True,
 ) -> LintResult:
     """Lint staged .py content under repo_root, materializing blobs into workdir.
 
@@ -124,8 +80,8 @@ def evaluate_staged(
     mapping = materialize_staged(repo_root, staged, workdir)
     result = gate.evaluate(sorted(mapping), repo_root)
 
-    # Rewrite temp paths back to repo-relative ones before filtering/reporting.
-    relocated = [
+    # Report repo-relative paths rather than the temp ones we scanned.
+    violations = [
         LintViolation(
             rule=v.rule,
             file=mapping.get(os.path.abspath(v.file), v.file),
@@ -134,12 +90,4 @@ def evaluate_staged(
         )
         for v in result.violations
     ]
-
-    violations = (
-        filter_to_added_lines(
-            relocated, {p: added_line_ranges(repo_root, p) for p in staged}
-        )
-        if diff_only
-        else relocated
-    )
     return LintResult(passed=len(violations) == 0, violations=violations)

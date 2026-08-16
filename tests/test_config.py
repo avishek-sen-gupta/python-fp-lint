@@ -3,11 +3,13 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 
 import pytest
 
+from python_fp_lint import lint_gate
 from python_fp_lint.lint_gate import ConfigError, LintGate, _read_config
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -180,3 +182,54 @@ class TestRelativeRulesDir:
             monkeypatch, LintGate(config_path=None), str(tmp_path)
         )
         assert captured is None
+
+
+class TestConfiguredRulesDirWins:
+    """A rules dir named in the config outranks the copy inside the package."""
+
+    @staticmethod
+    def _install_rules(dest):
+        os.makedirs(os.path.join(dest, "rules"), exist_ok=True)
+        with open(os.path.join(dest, "sgconfig.yml"), "w") as f:
+            f.write("ruleDirs:\n  - rules\n")
+        shutil.copy(
+            os.path.join(REPO_ROOT, "python_fp_lint", "rules", "no-list-append.yml"),
+            os.path.join(dest, "rules", "no-list-append.yml"),
+        )
+        return dest
+
+    def test_config_rules_dir_beats_package_copy(self, tmp_path):
+        rules = self._install_rules(str(tmp_path / ".python-fp-lint"))
+        path = _write_config(tmp_path, lint_rules_dir=".python-fp-lint")
+        assert LintGate(config_path=path)._resolve_rules_dir(str(tmp_path)) == rules
+
+    def test_configured_dir_is_scanned_in_place(self, tmp_path, monkeypatch):
+        """No copy to a cache: the consumer put the rules where they want them."""
+        rules = self._install_rules(str(tmp_path / ".python-fp-lint"))
+        path = _write_config(tmp_path, lint_rules_dir=".python-fp-lint")
+        copied = []
+        monkeypatch.setattr(
+            lint_gate,
+            "_materialize_rules_dir",
+            lambda src, root: copied.append(src) or src,
+        )
+        target = tmp_path / "m.py"
+        target.write_text("xs = []\nxs.append(1)\n")
+
+        result = LintGate(config_path=path).evaluate([str(target)], str(tmp_path))
+
+        assert copied == [], "configured rules dir must not be materialized"
+        assert any(v.rule == "no-list-append" for v in result.violations)
+        assert os.path.isdir(rules)
+
+    def test_deleting_a_configured_rule_disables_it(self, tmp_path):
+        """Proves the configured dir -- not the package copy -- is in play."""
+        rules = self._install_rules(str(tmp_path / ".python-fp-lint"))
+        path = _write_config(tmp_path, lint_rules_dir=".python-fp-lint")
+        target = tmp_path / "m.py"
+        target.write_text("xs = []\nxs.append(1)\n")
+        os.unlink(os.path.join(rules, "rules", "no-list-append.yml"))
+
+        result = LintGate(config_path=path).evaluate([str(target)], str(tmp_path))
+
+        assert not any(v.rule == "no-list-append" for v in result.violations)

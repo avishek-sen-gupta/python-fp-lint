@@ -114,7 +114,6 @@ def _run_precommit(args):
             workdir=workdir,
             gate=_build_gate(args),
             paths=args.files or None,
-            diff_only=not args.all_lines,
         )
     _report(result, args.format)
 
@@ -238,18 +237,13 @@ def main():
     precommit = add_rule_flags(
         sub.add_parser(
             "precommit",
-            help="Lint staged content; report only violations on added lines",
+            help="Lint the staged content of every staged Python file",
         )
     )
     precommit.add_argument(
         "files",
         nargs="*",
         help="Optional subset of staged files (pre-commit passes these)",
-    )
-    precommit.add_argument(
-        "--all-lines",
-        action="store_true",
-        help="Report every violation in staged files, not just added lines",
     )
 
     # --- rules ---

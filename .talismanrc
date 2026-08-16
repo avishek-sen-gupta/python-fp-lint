@@ -7,7 +7,7 @@ fileignoreconfig:
 - filename: python_fp_lint/lint_gate.py
   checksum: 451890c6cadc857fd43dd22b7a76914389d13cadc43a154679f20ad96058dba7
 - filename: tests/test_lint_gate.py
-  checksum: d1a0bc0e3284fb5e0848a22d5843c874e73d9832e9b8e4b551ecb7fdf65df5f7
+  checksum: 9f467ff33170c9e4808a7ed69ad5db20fff6bf7f659b24edd0053b445476e643
 - filename: tests/test_ast_grep_rules.py
   checksum: 9600163368750939afa830da62ce802b36194eb7b791c9e903dfd1f4c7e798b5
 - filename: tests/test_cli.py
@@ -26,4 +26,6 @@ fileignoreconfig:
   checksum: f29eb1359e8861cc6a6b59b85532d3398aff6d83d4e3eb5ec27a953e8993fe12
 - filename: tests/test_config.py
   checksum: 7fb6e6342036f42ec808c04e3518e5ae2081cc6a0849751abad9e944d2b428a6
+- filename: install-precommit.sh
+  checksum: 52bab58cdcaa4d7701fc816ffad3655f298d6c38d52116150511072b0eb7aa72
 version: "1.0"

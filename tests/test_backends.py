@@ -84,7 +84,7 @@ class TestEnforceStrict:
 
 
 class TestPreCommitHooksManifest:
-    def test_manifest_declares_both_hook_ids(self):
+    def test_manifest_declares_the_hook(self):
         import yaml
 
         path = os.path.join(
@@ -92,8 +92,7 @@ class TestPreCommitHooksManifest:
         )
         with open(path) as f:
             hooks = yaml.safe_load(f)
-        ids = {h["id"] for h in hooks}
-        assert ids == {"python-fp-lint", "python-fp-lint-all"}
+        assert {h["id"] for h in hooks} == {"python-fp-lint"}
         for hook in hooks:
             assert hook["entry"].startswith("python-fp-lint precommit")
             assert hook["types"] == ["python"]

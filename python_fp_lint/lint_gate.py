@@ -70,8 +70,16 @@ class LintGate:
         if not os.path.exists(sgconfig):
             return []
 
-        materialized_dir = _materialize_rules_dir(rules_dir, self.rules_cache_root)
-        violations = _run_sg(sg, materialized_dir, files)
+        # The package copy normally lives in the consumer's .venv, which is
+        # gitignored -- and ast-grep silently matches nothing under an ignored
+        # path -- so it has to be copied out before scanning. A rules dir the
+        # consumer pointed us at is used where it stands.
+        scan_dir = (
+            _materialize_rules_dir(rules_dir, self.rules_cache_root)
+            if os.path.abspath(rules_dir) == _package_rules_dir()
+            else rules_dir
+        )
+        violations = _run_sg(sg, scan_dir, files)
         allowed = self._resolve_ast_grep_rules()
         if allowed is not None:
             violations = [v for v in violations if v.rule in allowed]
@@ -137,6 +145,11 @@ def _filter_python_files(files: list[str]) -> list[str]:
         if real.endswith(".py") and os.path.exists(real):
             result.append(real)
     return result
+
+
+def _package_rules_dir() -> str:
+    """The rules shipped inside the installed package."""
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 def _default_rules_cache_root() -> str:
@@ -213,16 +226,18 @@ def _resolve_rules_dir(
 ) -> str | None:
     """Find the lint rules directory.
 
-    Searches in order: explicit rules_dir, package-local (next to this file),
-    project-local scripts/lint/, then lint_rules_dir from the config file.
+    Searches in order: explicit rules_dir, lint_rules_dir from the config file,
+    project-local scripts/lint/, then package-local (next to this file).
+
+    The config file outranks the package copy deliberately: the package copy
+    always exists, so anything below it in the order could never win.
     """
     if explicit_dir:
         return explicit_dir
-    pkg_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        pkg_dir,
+    candidates = ([config_dir] if config_dir else []) + [
         os.path.join(project_root, "scripts", "lint"),
-    ] + ([config_dir] if config_dir else [])
+        _package_rules_dir(),
+    ]
     for candidate in candidates:
         if os.path.isdir(candidate) and os.path.exists(
             os.path.join(candidate, "sgconfig.yml")

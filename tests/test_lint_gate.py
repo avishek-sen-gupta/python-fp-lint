@@ -143,7 +143,7 @@ class TestAstGrepIgnoresGitignoredRulesDir:
     .venv -- regardless of --no-ignore flags. This reproduces that exact
     layout and asserts the gate still finds violations."""
 
-    def test_finds_violations_when_rules_dir_is_gitignored(self, tmp_path):
+    def test_finds_violations_when_rules_dir_is_gitignored(self, tmp_path, monkeypatch):
         import subprocess as _subprocess
 
         repo = tmp_path / "consumer_repo"
@@ -168,7 +168,11 @@ class TestAstGrepIgnoresGitignoredRulesDir:
         target = repo / "widget.py"
         target.write_text("items = []\nitems.append(1)\n")
 
-        gate = LintGate(rules_dir=str(rules_src))
+        # Stand in for the installed package: this is the location the gate
+        # copies out of, and the only one it copies. A rules dir the consumer
+        # named themselves is scanned where it stands.
+        monkeypatch.setattr(lint_gate, "_package_rules_dir", lambda: str(rules_src))
+        gate = LintGate(rules_cache_root=str(tmp_path / "cache"))
         result = gate.evaluate([str(target)], str(repo))
 
         assert any(v.rule == "no-list-append" for v in result.violations)

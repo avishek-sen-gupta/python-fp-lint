@@ -238,20 +238,17 @@ See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Pre-commit gate
 
-The `precommit` subcommand is a commit gate for **your** project. It differs from `check` in two
-ways that matter for adoption on an existing codebase:
+The `precommit` subcommand is a commit gate for **your** project. It lints the **staged blob**
+(`git show :path`), not the worktree file — those differ whenever a file is partially staged, and
+it is the blob that gets committed.
 
-- It lints the **staged blob** (`git show :path`), not the worktree file. Those differ whenever a
-  file is partially staged, and it is the blob that gets committed.
-- It reports only violations on lines the staged diff **added**. Pre-existing violations don't
-  block the commit, so a legacy codebase can adopt the gate immediately and clean up gradually.
-  `--all-lines` turns the filter off and lints the whole staged file.
+Every violation in a staged file blocks the commit, including ones that predate the change being
+committed. Files you didn't stage are not examined.
 
 ```bash
-python-fp-lint precommit --config fp.json              # gate the staged diff
-python-fp-lint precommit --config fp.json --all-lines  # whole staged files, not just added lines
-python-fp-lint precommit --config fp.json --strict     # fail if ast-grep/Ruff are missing
-python-fp-lint precommit --config fp.json src/app.py   # narrow to a subset of the staged files
+python-fp-lint precommit --config fp.json            # gate the staged files
+python-fp-lint precommit --config fp.json --strict   # fail if ast-grep/Ruff are missing
+python-fp-lint precommit --config fp.json src/app.py # narrow to a subset of the staged files
 ```
 
 Exit codes: `0` = clean, `1` = violations, `2` = a required backend is missing (`--strict`).
@@ -259,19 +256,44 @@ Exit codes: `0` = clean, `1` = violations, `2` = a required backend is missing (
 `--strict` matters for a gate. By default a missing `sg` or `ruff` is silently skipped, which
 turns a broken install into a silently passing commit.
 
+### Installer script
+
+From the root of the project you want to gate:
+
+```bash
+/path/to/python-fp-lint/install-precommit.sh
+```
+
+It copies the 27 ast-grep rule files into `.python-fp-lint/` at the repo root, seeds `fp.json`
+from `config.example.json` with `lint_rules_dir` pointing there, wires the hook into
+`.pre-commit-config.yaml`, and runs `pre-commit install`. Re-running refreshes the rules and
+leaves everything else alone.
+
+**Never place a `.gitignore` inside `.python-fp-lint/`.** ast-grep silently matches nothing when
+an ignore file inside the rules directory excludes them — the gate then passes everything while
+reporting success. This is why the rules are copied out of the installed package at all: the
+package normally lands in `.venv`, whose self-ignoring `.gitignore` triggers exactly that.
+Listing `.python-fp-lint/` in the repo's *root* `.gitignore` tests fine, but committing the
+directory is safer, since CI needs it too.
+
+It pins `rev: main`, which is a mutable reference — pre-commit clones it once and never updates
+it. Once this repo has tags, change `rev` in `.pre-commit-config.yaml` or run
+`pre-commit autoupdate`. The script says so on completion.
+
+An existing `.pre-commit-config.yaml` is edited textually rather than round-tripped through
+a YAML parser, so your comments and key order survive.
+
 ### Via the pre-commit framework
 
-Add to your project's `.pre-commit-config.yaml`:
+To wire it by hand instead, add to your project's `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
   - repo: https://github.com/avishek-sen-gupta/python-fp-lint
     rev: main   # pin to a tag or SHA
     hooks:
-      - id: python-fp-lint          # added lines only
+      - id: python-fp-lint
         args: [--config, fp.json]   # required
-      # - id: python-fp-lint-all    # or: whole staged files
-      #   args: [--config, fp.json]
 ```
 
 pre-commit builds an isolated environment from this repo, so ast-grep and Ruff come along
@@ -303,7 +325,7 @@ python_fp_lint/
 ├── reassignment_gate.py   # beniget def-use chain analysis (called by LintGate)
 ├── result.py              # LintResult, LintViolation dataclasses
 ├── rules_meta.py          # Rule metadata reader (for CLI rules/schema commands)
-├── precommit.py           # Staged-blob linting + added-line filtering (git gate)
+├── precommit.py           # Staged-blob linting for the git commit gate
 ├── __init__.py            # Public API: LintGate, LintResult, LintViolation
 ├── __main__.py            # CLI entry point (text + JSON output)
 ├── sgconfig.yml           # ast-grep configuration
@@ -320,6 +342,7 @@ commands/
 └── lint.md                # /lint slash command for Claude Code
 
 install-lint.sh            # Wires hook into a project's .claude/settings.json
+install-precommit.sh       # Wires hook into a project's .pre-commit-config.yaml
 .pre-commit-hooks.yaml     # Hook manifest for the pre-commit framework
 ```
 
