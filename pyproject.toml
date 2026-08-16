@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "python-fp-lint"
 version = "0.1.0"
@@ -6,7 +10,14 @@ requires-python = ">=3.10"
 dependencies = [
     "beniget>=0.5.0",
     "pyyaml>=6.0",
+    # Backend binaries ship as wheels, so an install is self-contained: no
+    # separate `brew install ast-grep` step before the gate actually works.
+    "ast-grep-cli>=0.30",
+    "ruff>=0.5",
 ]
+
+[project.scripts]
+python-fp-lint = "python_fp_lint.__main__:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "black>=24.0"]

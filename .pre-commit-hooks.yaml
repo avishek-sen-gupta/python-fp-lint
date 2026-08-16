@@ -1,0 +1,23 @@
+# --config is required and has no default, so every consumer must supply it:
+#
+#   - id: python-fp-lint
+#     args: [--config, .python-fp-lint.json]
+#
+# Copy config.example.json from this repo as a starting point.
+- id: python-fp-lint
+  name: python-fp-lint (new lines only)
+  description: FP lint gate — blocks violations introduced by the staged diff
+  entry: python-fp-lint precommit --strict
+  language: python
+  types: [python]
+  pass_filenames: true
+  require_serial: true
+
+- id: python-fp-lint-all
+  name: python-fp-lint (whole file)
+  description: FP lint gate — blocks any violation in staged files
+  entry: python-fp-lint precommit --strict --all-lines
+  language: python
+  types: [python]
+  pass_filenames: true
+  require_serial: true

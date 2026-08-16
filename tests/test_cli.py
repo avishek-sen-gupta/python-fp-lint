@@ -8,6 +8,17 @@ import sys
 
 import pytest
 
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+# `check` and `precommit` require --config; the shipped example enables
+# every rule, so it reproduces the built-in defaults.
+CONFIG = os.path.join(REPO_ROOT, "config.example.json")
+
+
+def _with_config(args):
+    """Append --config to subcommands that require it."""
+    needs_config = {"check", "precommit"} & set(args)
+    return (*args, "--config", CONFIG) if needs_config else args
+
 
 @pytest.fixture
 def clean_file(tmp_path):
@@ -23,23 +34,23 @@ def dirty_file(tmp_path):
     return str(f)
 
 
-def _run_check(*args):
-    return subprocess.run(
-        [sys.executable, "-m", "python_fp_lint", "check", *args],
-        capture_output=True,
-        text=True,
-        cwd=os.path.dirname(os.path.dirname(__file__)),
-    )
-
-
-def _run_bare(*args):
-    """Run without the 'check' subcommand."""
+def _run_raw(*args):
+    """Run the CLI verbatim, adding nothing."""
     return subprocess.run(
         [sys.executable, "-m", "python_fp_lint", *args],
         capture_output=True,
         text=True,
-        cwd=os.path.dirname(os.path.dirname(__file__)),
+        cwd=REPO_ROOT,
     )
+
+
+def _run_check(*args):
+    return _run_raw(*_with_config(("check", *args)))
+
+
+def _run_bare(*args):
+    """Run without the 'check' subcommand."""
+    return _run_raw(*_with_config(args))
 
 
 class TestCLI:

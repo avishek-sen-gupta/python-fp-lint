@@ -44,7 +44,9 @@ def violations_in_range(
     return [v for v in violations if start <= v.line <= end]
 
 
-def check_tool_event(tool_name: str, tool_input: dict) -> int:
+def check_tool_event(
+    tool_name: str, tool_input: dict, config_path: str | None = None
+) -> int:
     """Evaluate a PreToolUse event. Returns 0 (allow) or 2 (block).
 
     Prints a diagnostic to stderr when blocking.
@@ -85,7 +87,7 @@ def check_tool_event(tool_name: str, tool_input: dict) -> int:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(post_content)
-        lint_result = LintGate().evaluate([tmpfile], os.getcwd())
+        lint_result = LintGate(config_path=config_path).evaluate([tmpfile], os.getcwd())
         in_range = violations_in_range(lint_result.violations, start_line, end_line)
     finally:
         os.unlink(tmpfile)
@@ -107,7 +109,16 @@ def check_tool_event(tool_name: str, tool_input: dict) -> int:
     return 2
 
 
-def main():
-    """Entry point: python -m python_fp_lint hook-check < event.json"""
+def main(config_path: str | None = None):
+    """Entry point: python -m python_fp_lint hook-check < event.json
+
+    Unlike `check` and `precommit`, config is optional here: the Claude Code
+    gate has to work the moment the hook is installed, so no config means
+    built-in defaults.
+    """
     data = json.load(sys.stdin)
-    sys.exit(check_tool_event(data.get("tool_name", ""), data.get("tool_input", {})))
+    sys.exit(
+        check_tool_event(
+            data.get("tool_name", ""), data.get("tool_input", {}), config_path
+        )
+    )

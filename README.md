@@ -55,52 +55,69 @@ complementary case and are not duplicated here.
 ### Requirements
 
 - Python 3.10+
-- [uv](https://docs.astral.sh/uv/) — package manager
-- [ast-grep](https://ast-grep.github.io/) (`sg`) — required for FP mutation rules
-- [Ruff](https://docs.astral.sh/ruff/) — required for hygiene rules
+- [uv](https://docs.astral.sh/uv/) — package manager (for development)
+
+[ast-grep](https://ast-grep.github.io/) and [Ruff](https://docs.astral.sh/ruff/) are declared as
+dependencies and ship as wheels, so installing the package installs both binaries. No separate
+`brew install` step is required.
 
 ### Install
 
+Standalone, no clone needed (installs straight from git — the package is not on PyPI yet):
+
 ```bash
-uv venv
-uv pip install -e ".[dev]"
+# One-off run
+uvx --from git+https://github.com/avishek-sen-gupta/python-fp-lint python-fp-lint check --config fp.json src/
+
+# Or install the `python-fp-lint` command permanently
+uv tool install git+https://github.com/avishek-sen-gupta/python-fp-lint
+pipx install git+https://github.com/avishek-sen-gupta/python-fp-lint
 ```
 
-Or install just the library:
+For development:
 
 ```bash
-uv pip install -e .
+uv sync --extra dev
 ```
 
 ## Usage
 
 ### CLI
 
+The package installs a `python-fp-lint` console script; `python -m python_fp_lint` is equivalent
+and works without the entry point.
+
 ```bash
 # Run all checks on files
-uv run python -m python_fp_lint check file1.py file2.py
+python-fp-lint check --config fp.json file1.py file2.py
+uv run python -m python_fp_lint check --config fp.json file1.py file2.py
 
 # Directories (recursive) and globs
-uv run python -m python_fp_lint check src/
-uv run python -m python_fp_lint check 'src/**/*.py'
-uv run python -m python_fp_lint check src/ tests/test_foo.py 'lib/*.py'
+uv run python -m python_fp_lint check --config fp.json src/
+uv run python -m python_fp_lint check --config fp.json 'src/**/*.py'
+uv run python -m python_fp_lint check --config fp.json src/ tests/test_foo.py 'lib/*.py'
 ```
 
 ### Configuring rules
 
-Rules can be configured via CLI flags, `config.json`, or the Python API. Resolution order: CLI/constructor > `config.json` > built-in defaults.
+`check` and `precommit` **require** `--config PATH`. There is no search and no default location:
+the config file is the one you name, or the command is a usage error. Copy
+[`config.example.json`](config.example.json) as a starting point.
+
+Rules can be configured via CLI flags, the config file, or the Python API. Resolution order:
+CLI/constructor > config file > built-in defaults.
 
 **CLI flags:**
 
 ```bash
 # Only run specific Ruff rule groups
-uv run python -m python_fp_lint check --ruff-select "E,F,W" src/
+uv run python -m python_fp_lint check --config fp.json --ruff-select "E,F,W" src/
 
 # Only enable specific ast-grep rules
-uv run python -m python_fp_lint check --ast-grep-rules "no-list-append,no-dict-update" src/
+uv run python -m python_fp_lint check --config fp.json --ast-grep-rules "no-list-append,no-dict-update" src/
 ```
 
-**config.json** (place next to the package, see `config.example.json`):
+**Config file** (any path you like — you name it with `--config`; see `config.example.json`):
 
 ```json
 {
@@ -121,7 +138,7 @@ Omitting a key (or passing `None`) uses all available rules for that backend.
 
 ```bash
 # Lint check with structured output
-uv run python -m python_fp_lint --format json check src/
+uv run python -m python_fp_lint --format json check --config fp.json src/
 
 # List all available rules
 uv run python -m python_fp_lint --format json rules
@@ -189,6 +206,9 @@ Requires: `jq`, `python-fp-lint` reachable via `uv run python -m python_fp_lint`
 
 The gate is **off by default**. Lock file: `/tmp/ctx-lint/<md5-of-pwd>`.
 
+Config is optional for this gate — it has to work the moment the hook is installed, so with no
+config it uses built-in defaults. Set `PYTHON_FP_LINT_CONFIG=/path/to/fp.json` to point it at one.
+
 When a violation is introduced, the tool call is blocked with a message listing the new violations. Fix them or disable the gate with `/lint off`.
 
 ## Testing
@@ -212,19 +232,68 @@ The test suite includes a self-lint integration test that runs `LintGate` on thi
 GitHub Actions runs on every push to `main` and on pull requests. The pipeline tests on Python 3.13 with:
 
 1. **Black** — formatting check
-2. **pytest** — full test suite (132 tests)
+2. **pytest** — full test suite (210 tests)
 
 See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
-## Pre-commit hook
+## Pre-commit gate
 
-The pre-commit hook runs:
+The `precommit` subcommand is a commit gate for **your** project. It differs from `check` in two
+ways that matter for adoption on an existing codebase:
 
-1. **Talisman** — secret detection
-2. **Black** — auto-format and re-stage
-3. **pytest** — full test suite
+- It lints the **staged blob** (`git show :path`), not the worktree file. Those differ whenever a
+  file is partially staged, and it is the blob that gets committed.
+- It reports only violations on lines the staged diff **added**. Pre-existing violations don't
+  block the commit, so a legacy codebase can adopt the gate immediately and clean up gradually.
+  `--all-lines` turns the filter off and lints the whole staged file.
 
-All steps use `uv run` for consistent environments.
+```bash
+python-fp-lint precommit --config fp.json              # gate the staged diff
+python-fp-lint precommit --config fp.json --all-lines  # whole staged files, not just added lines
+python-fp-lint precommit --config fp.json --strict     # fail if ast-grep/Ruff are missing
+python-fp-lint precommit --config fp.json src/app.py   # narrow to a subset of the staged files
+```
+
+Exit codes: `0` = clean, `1` = violations, `2` = a required backend is missing (`--strict`).
+
+`--strict` matters for a gate. By default a missing `sg` or `ruff` is silently skipped, which
+turns a broken install into a silently passing commit.
+
+### Via the pre-commit framework
+
+Add to your project's `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/avishek-sen-gupta/python-fp-lint
+    rev: main   # pin to a tag or SHA
+    hooks:
+      - id: python-fp-lint          # added lines only
+        args: [--config, fp.json]   # required
+      # - id: python-fp-lint-all    # or: whole staged files
+      #   args: [--config, fp.json]
+```
+
+pre-commit builds an isolated environment from this repo, so ast-grep and Ruff come along
+automatically.
+
+### Via a plain git hook
+
+No framework needed — `.git/hooks/pre-commit`:
+
+```sh
+#!/bin/sh
+exec python-fp-lint precommit --strict --config fp.json
+```
+
+```bash
+chmod +x .git/hooks/pre-commit
+```
+
+### This repo's own pre-commit hook
+
+For contributors to python-fp-lint itself, the local hook runs Talisman (secret detection), Black
+(auto-format and re-stage), and the full pytest suite — all via `uv run`.
 
 ## Architecture
 
@@ -234,6 +303,7 @@ python_fp_lint/
 ├── reassignment_gate.py   # beniget def-use chain analysis (called by LintGate)
 ├── result.py              # LintResult, LintViolation dataclasses
 ├── rules_meta.py          # Rule metadata reader (for CLI rules/schema commands)
+├── precommit.py           # Staged-blob linting + added-line filtering (git gate)
 ├── __init__.py            # Public API: LintGate, LintResult, LintViolation
 ├── __main__.py            # CLI entry point (text + JSON output)
 ├── sgconfig.yml           # ast-grep configuration
@@ -250,9 +320,11 @@ commands/
 └── lint.md                # /lint slash command for Claude Code
 
 install-lint.sh            # Wires hook into a project's .claude/settings.json
+.pre-commit-hooks.yaml     # Hook manifest for the pre-commit framework
 ```
 
-Each backend is called in sequence: ast-grep, Ruff, beniget. Missing tools are silently skipped.
+Each backend is called in sequence: ast-grep, Ruff, beniget. Missing tools are silently skipped —
+pass `--strict` to fail loudly instead.
 
 ## Design Decisions
 
@@ -280,10 +352,12 @@ ast-grep provides the same pattern-matching expressiveness with none of these co
 |------------|---------|
 | `beniget` | Def-use chain analysis (runtime) |
 | `pyyaml` | Rule metadata parsing (runtime) |
+| `ast-grep-cli` | AST-based FP mutation rules — ships the `sg`/`ast-grep` binaries (runtime) |
+| `ruff` | Hygiene lint rules — ships the `ruff` binary (runtime) |
 | `pytest` | Test framework (dev) |
 | `black` | Code formatter (dev) |
-| `sg` (ast-grep) | AST-based FP mutation rules (external tool) |
-| `ruff` | Hygiene lint rules (external tool) |
+
+An `sg`/`ruff` already on `PATH` takes precedence over the bundled wheels.
 
 ## License
 

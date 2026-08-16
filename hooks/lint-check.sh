@@ -23,5 +23,10 @@ elif python3 -m python_fp_lint --help >/dev/null 2>&1; then
 fi
 [ -n "$LINT_CMD" ] || exit 0
 
-# Delegate everything to Python
-cat | $LINT_CMD hook-check
+# Delegate everything to Python. Config is optional here; set
+# PYTHON_FP_LINT_CONFIG to point the gate at a config file.
+if [ -n "$PYTHON_FP_LINT_CONFIG" ]; then
+    cat | $LINT_CMD hook-check --config "$PYTHON_FP_LINT_CONFIG"
+else
+    cat | $LINT_CMD hook-check
+fi

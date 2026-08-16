@@ -5,19 +5,25 @@ fileignoreconfig:
 - filename: python_fp_lint/rules/no-subscript-tuple-mutation.yml
   checksum: bc4e007df83db563ef5b3ede3cf3a628d8262855b51a0bdd9d792c1ff4e91eb8
 - filename: python_fp_lint/lint_gate.py
-  checksum: c3df68e1a2359f635d9805b957241ab0840ba62bd6fc40722c3ce328aa7eafea
+  checksum: 451890c6cadc857fd43dd22b7a76914389d13cadc43a154679f20ad96058dba7
 - filename: tests/test_lint_gate.py
-  checksum: 72db83368b59c1b011874e3d5f7d7528e1d6d20e90d577cc98492ef1894ecf41
+  checksum: d1a0bc0e3284fb5e0848a22d5843c874e73d9832e9b8e4b551ecb7fdf65df5f7
 - filename: tests/test_ast_grep_rules.py
-  checksum: c7067a7f316b56c2530fdaa7d4e7ad4cb0edb85a3a12bf421e548267a2212d55
+  checksum: 9600163368750939afa830da62ce802b36194eb7b791c9e903dfd1f4c7e798b5
 - filename: tests/test_cli.py
   checksum: 989e567d0302fafc30d4e1eaeb4288808e23eac3
 - filename: python_fp_lint/__main__.py
-  checksum: 47208e4461ab06b4b869fa31741bc7963b1ec64c82a1aa377e369d2d0e06b332
+  checksum: 8618c214d8a2fd976f59b9197cd299b216bd739220d46f00a839bdb5400f15d5
 - filename: docs/superpowers/specs/2026-04-14-semgrep-to-ruff-migration-design.md
   checksum: 3ce58859ebc2bf366222007dc85a4f8abde5acace14efc92ad3f7edca656bd1a
 - filename: tests/test_ruff_integration.py
-  checksum: 50445303bfa17bfb3265b784c85daec6d67ae01bc0c9811a8f0f140b736f1d37
+  checksum: 28c3af1b55e9c33e4dca962262d39ae46b73db9cc312bdaa62d04497f95fe330
 - filename: hooks/lint-check.sh
   checksum: a5dbbcc8a010e74e802d1cfcfb628c52b9493107868829309856d5cfe2e5c5ce
+- filename: tests/test_backends.py
+  checksum: baec8052e9b9d9e78860c35b8fc0af0fc187c2466c9113c19d37087865d1144a
+- filename: python_fp_lint/precommit.py
+  checksum: f29eb1359e8861cc6a6b59b85532d3398aff6d83d4e3eb5ec27a953e8993fe12
+- filename: tests/test_config.py
+  checksum: 7fb6e6342036f42ec808c04e3518e5ae2081cc6a0849751abad9e944d2b428a6
 version: "1.0"

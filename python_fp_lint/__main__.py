@@ -6,25 +6,49 @@ Designed for both human use (text output) and LLM agent use (--format json).
 
 import argparse
 import json
+import subprocess
 import sys
+import tempfile
 
 from python_fp_lint.hook_check import main as _hook_check_main
-from python_fp_lint.lint_gate import LintGate
+from python_fp_lint.lint_gate import ConfigError, LintGate, missing_backends
+from python_fp_lint.precommit import evaluate_staged
 from python_fp_lint.rules_meta import list_rules
 
 
-def _run_check(args):
+def _build_gate(args) -> LintGate:
     ast_grep_rules = None
     if args.ast_grep_rules:
         ast_grep_rules = [r.strip() for r in args.ast_grep_rules.split(",")]
-    gate = LintGate(
+    return LintGate(
         ruff_select=args.ruff_select or None,
         ast_grep_rules=ast_grep_rules,
+        config_path=args.config or None,
     )
-    result = gate.evaluate(args.files, ".")
+
+
+def _enforce_strict(args) -> None:
+    """Exit 2 when --strict is set and a backend is unreachable.
+
+    Without this, a missing `sg` or `ruff` silently disables whole rule
+    families -- an invisible pass, which is the wrong default for a gate.
+    """
+    if not getattr(args, "strict", False):
+        return
+    missing = missing_backends()
+    if missing:
+        print(
+            f"error: required lint backend(s) not found: {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
+def _report(result, fmt: str) -> None:
+    """Print a LintResult in the requested format and exit 0/1."""
     violations = result.violations
 
-    if args.format == "json":
+    if fmt == "json":
         payload = {
             "passed": result.passed,
             "violation_count": len(violations),
@@ -50,6 +74,49 @@ def _run_check(args):
             print(f"\n{len(violations)} violation(s) found.")
 
     sys.exit(0 if result.passed else 1)
+
+
+def _with_config_errors(run, args):
+    """Turn a bad --config into a one-line error and exit 2, not a traceback."""
+    try:
+        run(args)
+    except ConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+
+def _run_check(args):
+    _enforce_strict(args)
+    _report(_build_gate(args).evaluate(args.files, "."), args.format)
+
+
+def _git_repo_root() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        print("error: not inside a git repository", file=sys.stderr)
+        sys.exit(2)
+    return result.stdout.strip()
+
+
+def _run_precommit(args):
+    _enforce_strict(args)
+    repo_root = _git_repo_root()
+    # Materialize staged blobs outside the repo: ast-grep and Ruff both honour
+    # the enclosing tree's ignore rules, and a temp dir inside it may be skipped.
+    with tempfile.TemporaryDirectory(prefix="python-fp-lint-staged-") as workdir:
+        result = evaluate_staged(
+            repo_root=repo_root,
+            workdir=workdir,
+            gate=_build_gate(args),
+            paths=args.files or None,
+            diff_only=not args.all_lines,
+        )
+    _report(result, args.format)
 
 
 def _run_rules(args):
@@ -139,18 +206,50 @@ def main():
     )
     sub = parser.add_subparsers(dest="command")
 
+    def add_rule_flags(p):
+        p.add_argument(
+            "--ruff-select",
+            default=None,
+            help="Comma-separated Ruff rule codes (overrides config.json and default)",
+        )
+        p.add_argument(
+            "--ast-grep-rules",
+            default=None,
+            help="Comma-separated ast-grep rule IDs to enable (overrides config.json)",
+        )
+        p.add_argument(
+            "--strict",
+            action="store_true",
+            help="Fail (exit 2) if ast-grep or Ruff is missing instead of skipping",
+        )
+        p.add_argument(
+            "--config",
+            required=True,
+            metavar="PATH",
+            help="Path to the config JSON file (required; no search, no default)",
+        )
+        return p
+
     # --- check ---
-    check = sub.add_parser("check", help="Run lint checks on files")
+    check = add_rule_flags(sub.add_parser("check", help="Run lint checks on files"))
     check.add_argument("files", nargs="+", help="Python files to check")
-    check.add_argument(
-        "--ruff-select",
-        default=None,
-        help="Comma-separated Ruff rule codes (overrides config.json and default)",
+
+    # --- precommit ---
+    precommit = add_rule_flags(
+        sub.add_parser(
+            "precommit",
+            help="Lint staged content; report only violations on added lines",
+        )
     )
-    check.add_argument(
-        "--ast-grep-rules",
-        default=None,
-        help="Comma-separated ast-grep rule IDs to enable (overrides config.json)",
+    precommit.add_argument(
+        "files",
+        nargs="*",
+        help="Optional subset of staged files (pre-commit passes these)",
+    )
+    precommit.add_argument(
+        "--all-lines",
+        action="store_true",
+        help="Report every violation in staged files, not just added lines",
     )
 
     # --- rules ---
@@ -160,21 +259,29 @@ def main():
     sub.add_parser("schema", help="Print JSON schema for check/rules output")
 
     # --- hook-check ---
-    sub.add_parser(
+    hook = sub.add_parser(
         "hook-check",
         help="Read a PreToolUse event JSON from stdin and exit 0 (allow) or 2 (block)",
+    )
+    hook.add_argument(
+        "--config",
+        default=None,
+        metavar="PATH",
+        help="Optional config JSON file; omitted means built-in defaults",
     )
 
     args = parser.parse_args()
 
     if args.command == "check":
-        _run_check(args)
+        _with_config_errors(_run_check, args)
+    elif args.command == "precommit":
+        _with_config_errors(_run_precommit, args)
     elif args.command == "rules":
         _run_rules(args)
     elif args.command == "schema":
         _run_schema(args)
     elif args.command == "hook-check":
-        _hook_check_main()
+        _hook_check_main(args.config)
     else:
         parser.print_help()
         sys.exit(1)

@@ -3,6 +3,7 @@
 import shutil
 import pytest
 
+from python_fp_lint import lint_gate
 from python_fp_lint.lint_gate import _DEFAULT_RUFF_SELECT, _find_ruff, _run_ruff
 
 needs_ruff = pytest.mark.skipif(
@@ -18,7 +19,9 @@ class TestFindRuff:
         assert result is None or isinstance(result, str)
 
     def test_returns_none_when_missing(self, monkeypatch):
-        monkeypatch.setattr(shutil, "which", lambda _: None)
+        # Patch the discovery helper: it also probes the interpreter's bin dir,
+        # where the `ruff` wheel dependency lives.
+        monkeypatch.setattr(lint_gate, "_which", lambda _: None)
         assert _find_ruff() is None
 
 

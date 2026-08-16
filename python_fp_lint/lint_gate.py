@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 
 from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.result import LintResult, LintViolation
@@ -25,11 +26,16 @@ class LintGate:
         ruff_select: str | None = None,
         ast_grep_rules: list[str] | None = None,
         rules_cache_root: str | None = None,
+        config_path: str | None = None,
     ):
         self.rules_dir = rules_dir
         self.ruff_select = ruff_select
         self.ast_grep_rules = ast_grep_rules
         self.rules_cache_root = rules_cache_root
+        self.config_path = config_path
+
+    def _config(self, key):
+        return _read_config(key, self.config_path)
 
     def evaluate(self, changed_files: list[str], project_root: str) -> LintResult:
         py_files = _filter_python_files(changed_files)
@@ -46,7 +52,7 @@ class LintGate:
     def _resolve_ast_grep_rules(self) -> list[str] | None:
         if self.ast_grep_rules is not None:
             return self.ast_grep_rules
-        config_val = _read_config("ast_grep_rules")
+        config_val = self._config("ast_grep_rules")
         if config_val and isinstance(config_val, list):
             return config_val
         return None
@@ -74,7 +80,7 @@ class LintGate:
     def _resolve_ruff_select(self) -> str:
         if self.ruff_select:
             return self.ruff_select
-        config_select = _read_config_ruff_select()
+        config_select = self._config("ruff_select")
         if config_select:
             return config_select
         return _DEFAULT_RUFF_SELECT
@@ -92,7 +98,13 @@ class LintGate:
         return result.violations
 
     def _resolve_rules_dir(self, project_root: str) -> str | None:
-        return _resolve_rules_dir(self.rules_dir, project_root)
+        configured = self._config("lint_rules_dir")
+        if configured and self.config_path:
+            # A relative lint_rules_dir is relative to the config file itself,
+            # so a config can be checked in beside the rules it points at.
+            base = os.path.dirname(os.path.abspath(self.config_path))
+            configured = os.path.join(base, configured)
+        return _resolve_rules_dir(self.rules_dir, project_root, configured)
 
 
 # --- shared helpers ---
@@ -164,19 +176,45 @@ def _materialize_rules_dir(source_dir: str, cache_root: str | None) -> str:
     return target
 
 
+def _which(name: str) -> str | None:
+    """Locate a tool on PATH, falling back to the running interpreter's bin dir.
+
+    The fallback matters when python-fp-lint is installed into an isolated
+    environment (pre-commit, pipx, uvx): the console script's siblings --
+    `ruff`, `ast-grep` -- live next to sys.executable but that directory is
+    not necessarily on PATH.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    sibling = os.path.join(os.path.dirname(sys.executable), name)
+    return sibling if os.path.isfile(sibling) and os.access(sibling, os.X_OK) else None
+
+
 def _find_sg() -> str | None:
-    return shutil.which("sg") or shutil.which("ast-grep")
+    return _which("sg") or _which("ast-grep")
 
 
 def _find_ruff() -> str | None:
-    return shutil.which("ruff")
+    return _which("ruff")
 
 
-def _resolve_rules_dir(explicit_dir: str | None, project_root: str) -> str | None:
+def missing_backends() -> list[str]:
+    """External backends that are not reachable, in report-friendly names."""
+    return [
+        name
+        for name, found in (("ast-grep", _find_sg()), ("ruff", _find_ruff()))
+        if found is None
+    ]
+
+
+def _resolve_rules_dir(
+    explicit_dir: str | None, project_root: str, config_dir: str | None = None
+) -> str | None:
     """Find the lint rules directory.
 
     Searches in order: explicit rules_dir, package-local (next to this file),
-    project-local scripts/lint/, then lint_rules_dir from config.json.
+    project-local scripts/lint/, then lint_rules_dir from the config file.
     """
     if explicit_dir:
         return explicit_dir
@@ -184,10 +222,7 @@ def _resolve_rules_dir(explicit_dir: str | None, project_root: str) -> str | Non
     candidates = [
         pkg_dir,
         os.path.join(project_root, "scripts", "lint"),
-    ]
-    config_dir = _read_config_rules_dir()
-    if config_dir:
-        candidates.append(config_dir)
+    ] + ([config_dir] if config_dir else [])
     for candidate in candidates:
         if os.path.isdir(candidate) and os.path.exists(
             os.path.join(candidate, "sgconfig.yml")
@@ -196,27 +231,27 @@ def _resolve_rules_dir(explicit_dir: str | None, project_root: str) -> str | Non
     return None
 
 
-def _read_config(key: str) -> str | None:
-    """Read a value from the plugin config.json."""
-    config_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "config.json",
-    )
-    if not os.path.exists(config_path):
+class ConfigError(Exception):
+    """An explicitly-specified config file is missing or unreadable."""
+
+
+def _read_config(key: str, config_path: str | None = None):
+    """Read one key from an explicitly named config file.
+
+    There is no search and no default location: config_path is either given,
+    or there is no config and built-in defaults apply. A named file that is
+    missing or malformed raises ConfigError rather than silently falling back
+    to defaults the caller did not ask for.
+    """
+    if config_path is None:
         return None
+    if not os.path.exists(config_path):
+        raise ConfigError(f"config file not found: {config_path}")
     try:
         with open(config_path) as f:
             return json.load(f).get(key)
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def _read_config_rules_dir() -> str | None:
-    return _read_config("lint_rules_dir")
-
-
-def _read_config_ruff_select() -> str | None:
-    return _read_config("ruff_select")
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ConfigError(f"cannot read config file {config_path}: {exc}") from exc
 
 
 def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolation]:

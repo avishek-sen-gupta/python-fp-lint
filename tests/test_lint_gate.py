@@ -5,6 +5,7 @@ import os
 import shutil
 import pytest
 
+from python_fp_lint import lint_gate
 from python_fp_lint.lint_gate import LintGate
 from python_fp_lint.result import LintResult
 
@@ -123,7 +124,9 @@ class TestMaterializeRulesDir:
         assert open(os.path.join(first, "rules", "r1.yml")).read() == "id: r1\n"
 
         # Change the source rule content -- a different signature/cache entry
-        (tmp_path / "rules_src" / "rules" / "r1.yml").write_text("id: r1\nchanged: true\n")
+        (tmp_path / "rules_src" / "rules" / "r1.yml").write_text(
+            "id: r1\nchanged: true\n"
+        )
 
         second = _materialize_rules_dir(source, cache_root)
         assert (
@@ -332,10 +335,10 @@ class TestLintGateRuff:
 
     def test_ruff_missing_continues(self, tmp_path, rules_dir, monkeypatch):
         """When ruff is missing, Ruff violations are empty but gate still runs."""
-        original_which = shutil.which
+        original_which = lint_gate._which
         monkeypatch.setattr(
-            shutil,
-            "which",
+            lint_gate,
+            "_which",
             lambda cmd: None if cmd == "ruff" else original_which(cmd),
         )
         path = _make_file(tmp_path, "widget.py", "print('hello')\n")
@@ -416,22 +419,22 @@ class TestRuffSelectConfig:
         result = gate.evaluate([path], str(tmp_path))
         assert not any(v.rule == "F401" for v in result.violations)
 
-    def test_config_json_overrides_default(self, tmp_path, rules_dir, monkeypatch):
+    def test_config_overrides_default(self, tmp_path, rules_dir, monkeypatch):
         path = _make_file(tmp_path, "widget.py", "import os\nx = 1\n")
         monkeypatch.setattr(
             "python_fp_lint.lint_gate._read_config",
-            lambda key: "E" if key == "ruff_select" else None,
+            lambda key, _path=None: "E" if key == "ruff_select" else None,
         )
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
         assert not any(v.rule == "F401" for v in result.violations)
 
-    def test_constructor_overrides_config_json(self, tmp_path, rules_dir, monkeypatch):
+    def test_constructor_overrides_config(self, tmp_path, rules_dir, monkeypatch):
         path = _make_file(tmp_path, "widget.py", "import os\nx = 1\n")
-        # config says E only, constructor says F — F should win
+        # config file says E only, constructor says F — F should win
         monkeypatch.setattr(
             "python_fp_lint.lint_gate._read_config",
-            lambda key: "E" if key == "ruff_select" else None,
+            lambda key, _path=None: "E" if key == "ruff_select" else None,
         )
         gate = LintGate(rules_dir=rules_dir, ruff_select="F")
         result = gate.evaluate([path], str(tmp_path))
@@ -457,11 +460,13 @@ class TestAstGrepRulesConfig:
         assert all(v.rule == "no-list-append" for v in ast_grep)
         assert not any(v.rule == "no-subscript-mutation" for v in result.violations)
 
-    def test_config_json_filters_rules(self, tmp_path, rules_dir, monkeypatch):
+    def test_config_filters_rules(self, tmp_path, rules_dir, monkeypatch):
         path = _make_file(tmp_path, "widget.py", "items = []\nitems.append(1)\n")
         monkeypatch.setattr(
             "python_fp_lint.lint_gate._read_config",
-            lambda key: ["no-list-append"] if key == "ast_grep_rules" else None,
+            lambda key, _path=None: (
+                ["no-list-append"] if key == "ast_grep_rules" else None
+            ),
         )
         gate = LintGate(rules_dir=rules_dir)
         result = gate.evaluate([path], str(tmp_path))
@@ -473,16 +478,18 @@ class TestAstGrepRulesConfig:
         assert len(ast_grep) > 0
         assert all(v.rule == "no-list-append" for v in ast_grep)
 
-    def test_constructor_overrides_config_json(self, tmp_path, rules_dir, monkeypatch):
+    def test_constructor_overrides_config(self, tmp_path, rules_dir, monkeypatch):
         path = _make_file(
             tmp_path,
             "widget.py",
             "items = []\nitems.append(1)\nd = {}\nd['k'] = 'v'\n",
         )
-        # config says no-list-append only, constructor says no-subscript-mutation
+        # config file says no-list-append only, constructor says no-subscript-mutation
         monkeypatch.setattr(
             "python_fp_lint.lint_gate._read_config",
-            lambda key: ["no-list-append"] if key == "ast_grep_rules" else None,
+            lambda key, _path=None: (
+                ["no-list-append"] if key == "ast_grep_rules" else None
+            ),
         )
         gate = LintGate(rules_dir=rules_dir, ast_grep_rules=["no-subscript-mutation"])
         result = gate.evaluate([path], str(tmp_path))
