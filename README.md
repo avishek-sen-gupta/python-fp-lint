@@ -122,17 +122,51 @@ uv run python -m python_fp_lint check --config fp.json --ast-grep-rules "no-list
 ```json
 {
   "ruff_select": "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901",
-  "ast_grep_rules": ["no-list-append", "no-dict-update"]
+  "ast_grep_rules": ["no-list-append", "no-dict-update"],
+  "exclude": ["generated/", "**/migrations/**", "*_pb2.py"]
 }
 ```
 
 **Python API:**
 
 ```python
-gate = LintGate(ruff_select="E,F", ast_grep_rules=["no-list-append"])
+gate = LintGate(
+    ruff_select="E,F",
+    ast_grep_rules=["no-list-append"],
+    exclude=["generated/"],
+)
 ```
 
 Omitting a key (or passing `None`) uses all available rules for that backend.
+
+### Excluding files
+
+`exclude` is a list of globs; a file matching any of them is never linted, by any
+backend. It applies to `check`, `precommit` (matched against the staged, repo-relative
+path) and the Claude Code `hook-check` gate alike.
+
+```json
+{
+  "exclude": ["generated/", "**/migrations/**", "*_pb2.py", "tests/fixtures/*.py"]
+}
+```
+
+Matching rules:
+
+| Pattern | Matches |
+|---|---|
+| `*_pb2.py` | a pattern with no `/` is matched against the **basename**, at any depth |
+| `generated/` | a trailing `/` excludes everything under that directory |
+| `src/*.py` | `*` and `?` stop at a path separator — not `src/deep/a.py` |
+| `**/migrations/**` | `**` crosses separators |
+
+Paths are matched relative to the project root (the directory `check` runs in, or the
+repo root for `precommit`). `--exclude` takes a comma-separated list and overrides the
+config file:
+
+```bash
+uv run python -m python_fp_lint check --config fp.json --exclude "generated/,*_pb2.py" src/
+```
 
 ### JSON output (for LLM agents and toolchains)
 

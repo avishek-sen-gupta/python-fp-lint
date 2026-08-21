@@ -44,6 +44,62 @@ def violations_in_range(
     return [v for v in violations if start <= v.line <= end]
 
 
+def _lint_content(
+    gate: LintGate, content: str, start_line: int, end_line: int
+) -> list[LintViolation]:
+    """Lint post-edit content off a temp file, keeping only the edited range."""
+    fd, tmpfile = tempfile.mkstemp(suffix=".py")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        result = gate.evaluate([tmpfile], os.getcwd())
+    finally:
+        os.unlink(tmpfile)
+    return violations_in_range(result.violations, start_line, end_line)
+
+
+def _edit_outcome(tool_input: dict) -> tuple[str, int, int] | None:
+    """Post-edit content and touched line range for an Edit event."""
+    file_path = tool_input.get("file_path", "")
+    if not os.path.isfile(file_path):
+        return None
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        return None
+    return simulate_edit(
+        content,
+        tool_input.get("old_string", ""),
+        tool_input.get("new_string", ""),
+        tool_input.get("replace_all", False),
+    )
+
+
+def _write_outcome(tool_input: dict) -> tuple[str, int, int] | None:
+    """Post-write content and touched line range for a Write event: all of it."""
+    content = tool_input.get("content", "")
+    return content, 1, max(1, content.count("\n") + 1)
+
+
+_OUTCOME_BY_TOOL = {"Edit": _edit_outcome, "Write": _write_outcome}
+
+
+def _report_block(
+    file_path: str, start_line: int, end_line: int, violations: list[LintViolation]
+) -> None:
+    print(
+        f"[lint-gate] Blocked: {len(violations)} FP violation(s) in edited range "
+        f"(lines {start_line}-{end_line}) of {file_path}",
+        file=sys.stderr,
+    )
+    for v in violations:
+        print(f"  {v.rule}:{v.line}:{v.message}", file=sys.stderr)
+    print(
+        "\nFix the violations or disable the lint gate with /lint off", file=sys.stderr
+    )
+
+
 def check_tool_event(
     tool_name: str, tool_input: dict, config_path: str | None = None
 ) -> int:
@@ -51,61 +107,27 @@ def check_tool_event(
 
     Prints a diagnostic to stderr when blocking.
     """
-    if tool_name == "Edit":
-        file_path = tool_input.get("file_path", "")
-        if not file_path or not file_path.endswith(".py"):
-            return 0
-        if not os.path.isfile(file_path):
-            return 0
-        try:
-            with open(file_path, encoding="utf-8") as f:
-                content = f.read()
-        except OSError:
-            return 0
-        outcome = simulate_edit(
-            content,
-            tool_input.get("old_string", ""),
-            tool_input.get("new_string", ""),
-            tool_input.get("replace_all", False),
-        )
-        if outcome is None:
-            return 0
-        post_content, start_line, end_line = outcome
-
-    elif tool_name == "Write":
-        file_path = tool_input.get("file_path", "")
-        if not file_path or not file_path.endswith(".py"):
-            return 0
-        post_content = tool_input.get("content", "")
-        start_line = 1
-        end_line = max(1, post_content.count("\n") + 1)
-
-    else:
+    outcome_of = _OUTCOME_BY_TOOL.get(tool_name)
+    file_path = tool_input.get("file_path", "")
+    if outcome_of is None or not file_path.endswith(".py"):
         return 0
 
-    fd, tmpfile = tempfile.mkstemp(suffix=".py")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(post_content)
-        lint_result = LintGate(config_path=config_path).evaluate([tmpfile], os.getcwd())
-        in_range = violations_in_range(lint_result.violations, start_line, end_line)
-    finally:
-        os.unlink(tmpfile)
+    gate = LintGate(config_path=config_path)
+    # The edit is judged by where the real file lives, not by the temp copy
+    # that gets linted.
+    if gate.is_excluded(file_path, os.getcwd()):
+        return 0
 
+    outcome = outcome_of(tool_input)
+    if outcome is None:
+        return 0
+    post_content, start_line, end_line = outcome
+
+    in_range = _lint_content(gate, post_content, start_line, end_line)
     if not in_range:
         return 0
 
-    count = len(in_range)
-    print(
-        f"[lint-gate] Blocked: {count} FP violation(s) in edited range "
-        f"(lines {start_line}-{end_line}) of {file_path}",
-        file=sys.stderr,
-    )
-    for v in in_range:
-        print(f"  {v.rule}:{v.line}:{v.message}", file=sys.stderr)
-    print(
-        "\nFix the violations or disable the lint gate with /lint off", file=sys.stderr
-    )
+    _report_block(file_path, start_line, end_line, in_range)
     return 2
 
 

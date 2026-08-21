@@ -5,9 +5,11 @@ import glob
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+from functools import cache
 
 from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.result import LintResult, LintViolation
@@ -27,18 +29,22 @@ class LintGate:
         ast_grep_rules: list[str] | None = None,
         rules_cache_root: str | None = None,
         config_path: str | None = None,
+        exclude: list[str] | None = None,
     ):
         self.rules_dir = rules_dir
         self.ruff_select = ruff_select
         self.ast_grep_rules = ast_grep_rules
         self.rules_cache_root = rules_cache_root
         self.config_path = config_path
+        self.exclude = exclude
 
     def _config(self, key):
         return _read_config(key, self.config_path)
 
     def evaluate(self, changed_files: list[str], project_root: str) -> LintResult:
-        py_files = _filter_python_files(changed_files)
+        py_files = self.filter_excluded(
+            _filter_python_files(changed_files), project_root
+        )
         if not py_files:
             return LintResult(passed=True, violations=[])
 
@@ -48,6 +54,26 @@ class LintGate:
         violations.extend(self._run_reassignment(py_files, project_root))
 
         return LintResult(passed=len(violations) == 0, violations=violations)
+
+    def resolve_exclude(self) -> list[str]:
+        """Exclude globs in force: constructor > config file > nothing."""
+        if self.exclude is not None:
+            return self.exclude
+        config_val = self._config("exclude")
+        if config_val and isinstance(config_val, list):
+            return config_val
+        return []
+
+    def is_excluded(self, path: str, project_root: str) -> bool:
+        """True when path matches one of the configured exclude globs."""
+        return is_excluded(path, project_root, self.resolve_exclude())
+
+    def filter_excluded(self, files: list[str], project_root: str) -> list[str]:
+        """Drop every path matching an exclude glob."""
+        patterns = self.resolve_exclude()
+        if not patterns:
+            return files
+        return [f for f in files if not is_excluded(f, project_root, patterns)]
 
     def _resolve_ast_grep_rules(self) -> list[str] | None:
         if self.ast_grep_rules is not None:
@@ -145,6 +171,58 @@ def _filter_python_files(files: list[str]) -> list[str]:
         if real.endswith(".py") and os.path.exists(real):
             result.append(real)
     return result
+
+
+# One token per alternative, longest first, so `**` never splits into two `*`.
+_GLOB_TOKEN = re.compile(r"\*\*/|\*\*|\*|\?|[^*?]+")
+
+_GLOB_REGEX = {
+    "**/": r"(?:.*/)?",
+    "**": r".*",
+    "*": r"[^/]*",
+    "?": r"[^/]",
+}
+
+
+@cache
+def _compile_glob(pattern: str) -> re.Pattern:
+    """Compile one exclude glob into an anchored regex.
+
+    `*` and `?` stop at a path separator, `**` crosses them, and a trailing
+    `/` is shorthand for "everything under this directory".
+    """
+    body = pattern[:-1] + "/**" if pattern.endswith("/") else pattern
+    return re.compile(
+        "".join(_GLOB_REGEX.get(t, re.escape(t)) for t in _GLOB_TOKEN.findall(body))
+        + r"\Z"
+    )
+
+
+def _relative_path(path: str, project_root: str) -> str:
+    """path as a project-relative posix string; absolute if it lies outside."""
+    root = os.path.abspath(project_root)
+    absolute = os.path.abspath(
+        path if os.path.isabs(path) else os.path.join(root, path)
+    )
+    rel = os.path.relpath(absolute, root)
+    chosen = absolute if rel == ".." or rel.startswith(".." + os.sep) else rel
+    return chosen.replace(os.sep, "/")
+
+
+def is_excluded(path: str, project_root: str, patterns: list[str]) -> bool:
+    """True when path matches any of the exclude globs.
+
+    Globs are matched against the path relative to project_root. A pattern
+    containing no `/` is matched against the basename at any depth, the way
+    .gitignore treats a bare name -- so `*_pb2.py` needs no `**/` prefix, and
+    a whole directory is excluded by naming it with a slash (`build/`).
+    """
+    rel = _relative_path(path, project_root)
+    base = os.path.basename(rel)
+    return any(
+        _compile_glob(p).match(base if "/" not in p else rel) is not None
+        for p in patterns
+    )
 
 
 def _package_rules_dir() -> str:

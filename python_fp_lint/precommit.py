@@ -73,7 +73,13 @@ def evaluate_staged(
     filenames it selected. `workdir` must be an existing empty directory
     outside the repo; the caller owns its lifetime.
     """
-    staged = _narrow_to_requested(staged_python_files(repo_root), paths, repo_root)
+    # Exclusions are applied to the repo-relative names, before blobs are
+    # materialized: once written under workdir a file no longer sits at a
+    # path the project's globs describe.
+    staged = gate.filter_excluded(
+        _narrow_to_requested(staged_python_files(repo_root), paths, repo_root),
+        repo_root,
+    )
     if not staged:
         return LintResult(passed=True, violations=[])
 

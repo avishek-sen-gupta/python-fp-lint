@@ -28,4 +28,6 @@ fileignoreconfig:
   checksum: 7fb6e6342036f42ec808c04e3518e5ae2081cc6a0849751abad9e944d2b428a6
 - filename: install-precommit.sh
   checksum: 52bab58cdcaa4d7701fc816ffad3655f298d6c38d52116150511072b0eb7aa72
+- filename: tests/test_exclude.py
+  checksum: a6a8584250bdc1a1f95c4c2ca788b007a608e48102664037108b0b913c4d7b1e
 version: "1.0"

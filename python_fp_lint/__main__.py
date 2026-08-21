@@ -16,13 +16,18 @@ from python_fp_lint.precommit import evaluate_staged
 from python_fp_lint.rules_meta import list_rules
 
 
+def _split_list(value: str | None) -> list[str] | None:
+    """Comma-separated CLI value into a list; None when the flag is unused."""
+    if not value:
+        return None
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def _build_gate(args) -> LintGate:
-    ast_grep_rules = None
-    if args.ast_grep_rules:
-        ast_grep_rules = [r.strip() for r in args.ast_grep_rules.split(",")]
     return LintGate(
         ruff_select=args.ruff_select or None,
-        ast_grep_rules=ast_grep_rules,
+        ast_grep_rules=_split_list(args.ast_grep_rules),
+        exclude=_split_list(getattr(args, "exclude", None)),
         config_path=args.config or None,
     )
 
@@ -215,6 +220,14 @@ def main():
             "--ast-grep-rules",
             default=None,
             help="Comma-separated ast-grep rule IDs to enable (overrides config.json)",
+        )
+        p.add_argument(
+            "--exclude",
+            default=None,
+            help=(
+                "Comma-separated file globs to skip "
+                "(overrides the config file's `exclude`)"
+            ),
         )
         p.add_argument(
             "--strict",
