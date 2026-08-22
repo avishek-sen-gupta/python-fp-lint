@@ -47,7 +47,7 @@ complementary case and are not duplicated here.
 | `BLE` | Blind except detection — catches `except Exception:`/`except BaseException:`; replaces the old `no-except-exception` ast-grep rule |
 | `T20` | Print statement detection |
 | `TID252` | Relative import detection |
-| `C901` | Cyclomatic complexity |
+| `C901` | Cyclomatic complexity — ceiling configurable via `max_complexity`, default **3** (see [Cyclomatic complexity](#cyclomatic-complexity)) |
 | `ANN401` | Explicit `Any` in function parameter and return annotations — partial overlap with `no-any-type`, which also covers variable annotations and `Any` nested in generics |
 
 ## Setup
@@ -115,6 +115,9 @@ uv run python -m python_fp_lint check --config fp.json --ruff-select "E,F,W" src
 
 # Only enable specific ast-grep rules
 uv run python -m python_fp_lint check --config fp.json --ast-grep-rules "no-list-append,no-dict-update" src/
+
+# Raise or lower the cyclomatic complexity ceiling
+uv run python -m python_fp_lint check --config fp.json --max-complexity 5 src/
 ```
 
 **Config file** (any path you like — you name it with `--config`; see `config.example.json`):
@@ -122,6 +125,7 @@ uv run python -m python_fp_lint check --config fp.json --ast-grep-rules "no-list
 ```json
 {
   "ruff_select": "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901",
+  "max_complexity": 3,
   "ast_grep_rules": ["no-list-append", "no-dict-update"],
   "exclude": ["generated/", "**/migrations/**", "*_pb2.py"]
 }
@@ -134,10 +138,48 @@ gate = LintGate(
     ruff_select="E,F",
     ast_grep_rules=["no-list-append"],
     exclude=["generated/"],
+    max_complexity=5,
 )
 ```
 
 Omitting a key (or passing `None`) uses all available rules for that backend.
+
+### Cyclomatic complexity
+
+`max_complexity` caps the cyclomatic complexity of any single function. A function
+over the cap is reported as Ruff's `C901`:
+
+```
+[C901] src/handler.py:42 — `dispatch` is too complex (7 > 3)
+```
+
+The default is **3** — deliberately stricter than Ruff's own default of 10, on the
+view that a function past three branches wants decomposing. Set it wherever you
+like:
+
+```jsonc
+{ "max_complexity": 5 }   // or --max-complexity 5, or LintGate(max_complexity=5)
+```
+
+`0` fails every function and is accepted (it is occasionally useful for surveying
+complexity across a codebase); a negative or non-integer value is a config error.
+
+Two things worth knowing:
+
+- **The metric is Ruff's approximation of McCabe.** "McCabe complexity" and
+  "cyclomatic complexity" are the same measure, but Ruff computes it by walking the
+  AST and counting branching statements — `if`/`elif`/`else`, loops, `except`
+  handlers, `with`, `match` arms, nested definitions. It does **not** count boolean
+  `and`/`or` operators or ternaries as decision points, where `radon` and some other
+  tools do. Ruff's number therefore runs slightly lower than radon's on the same
+  function.
+- **`C901` must stay in `ruff_select`.** It is the rule that reports this, so if you
+  override `ruff_select` and leave `C901` out, `max_complexity` silently stops
+  applying. The built-in default includes it.
+
+The setting is passed to Ruff as an inline `--config` override, which beats any
+`pyproject.toml` in the project being scanned — the gate's ceiling is the one that
+applies.
 
 ### Excluding files
 

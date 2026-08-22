@@ -28,6 +28,7 @@ def _build_gate(args) -> LintGate:
         ruff_select=args.ruff_select or None,
         ast_grep_rules=_split_list(args.ast_grep_rules),
         exclude=_split_list(getattr(args, "exclude", None)),
+        max_complexity=getattr(args, "max_complexity", None),
         config_path=args.config or None,
     )
 
@@ -227,6 +228,16 @@ def main():
             help=(
                 "Comma-separated file globs to skip "
                 "(overrides the config file's `exclude`)"
+            ),
+        )
+        p.add_argument(
+            "--max-complexity",
+            type=int,
+            default=None,
+            metavar="N",
+            help=(
+                "Maximum cyclomatic complexity per function, reported as Ruff "
+                "C901 (overrides the config file's `max_complexity`)"
             ),
         )
         p.add_argument(
