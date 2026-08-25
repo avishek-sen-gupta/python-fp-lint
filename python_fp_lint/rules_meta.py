@@ -37,7 +37,8 @@ def _ast_grep_rules() -> list[dict]:
 
 def _ruff_rules() -> list[dict]:
     """Return metadata for Ruff rules selected in LintGate._RUFF_SELECT."""
-    # Ruff rule codes selected in LintGate: E, F, W, I, B, UP, SIM, RUF, BLE, T20, TID252, C901
+    # Ruff rule codes selected in LintGate: E, F, W, I, B, UP, SIM, RUF, BLE, T20,
+    # TID252, C901, PLR0915
     return [
         {
             "id": "E",
@@ -108,6 +109,12 @@ def _ruff_rules() -> list[dict]:
         {
             "id": "C901",
             "message": "McCabe complexity checks",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "PLR0915",
+            "message": "Too many statements in a function",
             "severity": "warning",
             "backend": "ruff",
         },

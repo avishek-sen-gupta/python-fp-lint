@@ -29,6 +29,7 @@ def _build_gate(args) -> LintGate:
         ast_grep_rules=_split_list(args.ast_grep_rules),
         exclude=_split_list(getattr(args, "exclude", None)),
         max_complexity=getattr(args, "max_complexity", None),
+        max_statements=getattr(args, "max_statements", None),
         config_path=args.config or None,
     )
 
@@ -238,6 +239,16 @@ def main():
             help=(
                 "Maximum cyclomatic complexity per function, reported as Ruff "
                 "C901 (overrides the config file's `max_complexity`)"
+            ),
+        )
+        p.add_argument(
+            "--max-statements",
+            type=int,
+            default=None,
+            metavar="N",
+            help=(
+                "Maximum statements per function, reported as Ruff PLR0915 "
+                "(overrides the config file's `max_statements`)"
             ),
         )
         p.add_argument(

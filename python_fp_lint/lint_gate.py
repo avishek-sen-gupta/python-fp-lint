@@ -15,11 +15,14 @@ from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.result import LintResult, LintViolation
 
 # Ruff rule selection — batteries-included + FP-specific
-_DEFAULT_RUFF_SELECT = "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,ANN401"
+_DEFAULT_RUFF_SELECT = "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,PLR0915,ANN401"
 _DEFAULT_RUFF_IGNORE = "E501,W292"
 # Ruff's C901 ceiling. Deliberately stricter than Ruff's own default of 10:
 # a function past three branches is asking to be decomposed.
 _DEFAULT_MAX_COMPLEXITY = 3
+# Ruff's PLR0915 ceiling, counted in statements rather than physical lines.
+# Deliberately stricter than Ruff's own default of 50.
+_DEFAULT_MAX_STATEMENTS = 10
 
 
 class LintGate:
@@ -34,6 +37,7 @@ class LintGate:
         config_path: str | None = None,
         exclude: list[str] | None = None,
         max_complexity: int | None = None,
+        max_statements: int | None = None,
     ):
         self.rules_dir = rules_dir
         self.ruff_select = ruff_select
@@ -42,6 +46,7 @@ class LintGate:
         self.config_path = config_path
         self.exclude = exclude
         self.max_complexity = max_complexity
+        self.max_statements = max_statements
 
     def _config(self, key):
         return _read_config(key, self.config_path)
@@ -133,6 +138,15 @@ class LintGate:
             return _DEFAULT_MAX_COMPLEXITY
         return _validate_max_complexity(config_val)
 
+    def _resolve_max_statements(self) -> int:
+        """Statement ceiling in force: constructor > config file > default."""
+        if self.max_statements is not None:
+            return _validate_ceiling("max_statements", self.max_statements)
+        config_val = self._config("max_statements")
+        if config_val is None:
+            return _DEFAULT_MAX_STATEMENTS
+        return _validate_ceiling("max_statements", config_val)
+
     def _run_ruff(self, files: list[str]) -> list[LintViolation]:
         ruff = _find_ruff()
         if ruff is None:
@@ -142,6 +156,7 @@ class LintGate:
             files,
             self._resolve_ruff_select(),
             self._resolve_max_complexity(),
+            max_statements=self._resolve_max_statements(),
         )
 
     def _run_reassignment(
@@ -411,17 +426,23 @@ def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolatio
     return violations
 
 
-def _validate_max_complexity(value) -> int:
-    """A complexity ceiling is a non-negative int -- and `bool` is not one."""
+def _validate_ceiling(name: str, value) -> int:
+    """A ceiling is a non-negative int -- and `bool` is not one."""
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ConfigError(
-            f"max_complexity must be a non-negative integer, got {value!r}"
-        )
+        raise ConfigError(f"{name} must be a non-negative integer, got {value!r}")
     return value
 
 
+def _validate_max_complexity(value) -> int:
+    return _validate_ceiling("max_complexity", value)
+
+
 def _run_ruff(
-    ruff_path: str, files: list[str], select: str, max_complexity: int
+    ruff_path: str,
+    files: list[str],
+    select: str,
+    max_complexity: int,
+    max_statements: int = _DEFAULT_MAX_STATEMENTS,
 ) -> list[LintViolation]:
     try:
         result = subprocess.run(
@@ -439,6 +460,8 @@ def _run_ruff(
                 # that applies.
                 "--config",
                 f"lint.mccabe.max-complexity={max_complexity}",
+                "--config",
+                f"lint.pylint.max-statements={max_statements}",
             ]
             + files,
             capture_output=True,

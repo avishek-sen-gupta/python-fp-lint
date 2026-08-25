@@ -48,6 +48,7 @@ complementary case and are not duplicated here.
 | `T20` | Print statement detection |
 | `TID252` | Relative import detection |
 | `C901` | Cyclomatic complexity — ceiling configurable via `max_complexity`, default **3** (see [Cyclomatic complexity](#cyclomatic-complexity)) |
+| `PLR0915` | Statement count per function — ceiling configurable via `max_statements`, default **10** (see [Statement count](#statement-count)) |
 | `ANN401` | Explicit `Any` in function parameter and return annotations — partial overlap with `no-any-type`, which also covers variable annotations and `Any` nested in generics |
 
 ## Setup
@@ -118,14 +119,18 @@ uv run python -m python_fp_lint check --config fp.json --ast-grep-rules "no-list
 
 # Raise or lower the cyclomatic complexity ceiling
 uv run python -m python_fp_lint check --config fp.json --max-complexity 5 src/
+
+# Raise or lower the per-function statement ceiling
+uv run python -m python_fp_lint check --config fp.json --max-statements 20 src/
 ```
 
 **Config file** (any path you like — you name it with `--config`; see `config.example.json`):
 
 ```json
 {
-  "ruff_select": "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901",
+  "ruff_select": "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,PLR0915",
   "max_complexity": 3,
+  "max_statements": 10,
   "ast_grep_rules": ["no-list-append", "no-dict-update"],
   "exclude": ["generated/", "**/migrations/**", "*_pb2.py"]
 }
@@ -139,6 +144,7 @@ gate = LintGate(
     ast_grep_rules=["no-list-append"],
     exclude=["generated/"],
     max_complexity=5,
+    max_statements=20,
 )
 ```
 
@@ -180,6 +186,40 @@ Two things worth knowing:
 The setting is passed to Ruff as an inline `--config` override, which beats any
 `pyproject.toml` in the project being scanned — the gate's ceiling is the one that
 applies.
+
+### Statement count
+
+`max_statements` caps how many **statements** a single function may contain. This is a
+count of statements, not of physical editor lines: blank lines, comments and a single
+expression wrapped over five lines all count as one statement or none, while several
+statements crammed onto one line with semicolons each count separately. A function over
+the cap is reported as Ruff's `PLR0915`:
+
+```
+[PLR0915] src/handler.py:42 — Too many statements (18 > 10)
+```
+
+The default is **10** — deliberately stricter than Ruff's own default of 50, on the same
+view that drives `max_complexity`: a long method wants decomposing. Set it wherever you
+like:
+
+```jsonc
+{ "max_statements": 20 }   // or --max-statements 20, or LintGate(max_statements=20)
+```
+
+`0` fails every function that has a body and is accepted; a negative or non-integer value
+is a config error.
+
+Two things worth knowing:
+
+- **The trailing `return` is not counted.** Ruff follows pylint here, so a function
+  ending in `return x` scores one statement lower than a naive count suggests.
+- **`PLR0915` must stay in `ruff_select`.** It is the rule that reports this, so if you
+  override `ruff_select` and leave `PLR0915` out, `max_statements` silently stops
+  applying. The built-in default includes it.
+
+Like `max_complexity`, the setting is passed to Ruff as an inline `--config` override, so
+it beats any `pyproject.toml` in the project being scanned.
 
 ### Excluding files
 
