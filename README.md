@@ -13,7 +13,7 @@ The unified `LintGate` runs all three backends in sequence. Each backend that is
 
 ## Rules
 
-### ast-grep rules (27)
+### ast-grep rules (33)
 
 | Category | Rules |
 |----------|-------|
@@ -22,15 +22,21 @@ The unified `LintGate` runs all three backends in sequence. Each backend that is
 | **Set mutation** | `no-set-add`, `no-set-discard` |
 | **Subscript mutation** | `no-subscript-mutation`, `no-subscript-del`, `no-subscript-augmented-mutation`, `no-subscript-tuple-mutation`, `no-setitem-call` |
 | **Augmented assignment** | `no-local-augmented-mutation`, `no-attribute-augmented-mutation` |
-| **None / Optional** | `no-is-none`, `no-is-not-none`, `no-optional-none`, `no-none-default-param` |
-| **Style** | `no-static-method` |
-| **Structural** | `no-deep-nesting`, `no-loop-mutation` |
-| **Type annotations** | `no-list-dict-param-annotation`, `no-unfrozen-dataclass`, `no-any-type` |
+| **None / Optional** | `no-is-none`, `no-is-not-none`, `no-optional-none`, `no-none-default-param`, `no-or-none-fallback` |
+| **Style** | `no-static-method`, `no-classmethod-utility` |
+| **Structural** | `no-deep-nesting`, `no-loop-mutation`, `no-mutation-outside-init` |
+| **Type annotations** | `no-list-dict-param-annotation`, `no-unfrozen-dataclass`, `no-any-type`, `no-object-type` |
+| **Test quality** | `no-weak-assert`, `no-xfail-without-reason` |
 
 `no-any-type` bans *explicit* `typing.Any` usage only (`x: Any`, `-> Any`, `dict[str, Any]`, ...).
 It cannot see *implicit* Any from missing annotations (e.g. `def f(x):`) — pyright's
 `reportUnknownParameterType`/`reportMissingParameterType`/`reportUnknownVariableType` cover that
-complementary case and are not duplicated here.
+complementary case and are not duplicated here. `no-object-type` covers the same ground for
+`object`, the other untyped-blob escape hatch.
+
+`no-weak-assert` flags each individual weak assertion (existence, containment, truthiness).
+It replaces the coarser `test-vacuous` rule in `rules/disabled/`, which judged a whole test
+function rather than a single statement.
 
 ### Ruff rules (batteries-included + FP-specific)
 

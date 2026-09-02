@@ -31,6 +31,12 @@
     "no-loop-mutation",
     "no-list-dict-param-annotation",
     "no-unfrozen-dataclass",
-    "no-any-type"
+    "no-any-type",
+    "no-object-type",
+    "no-or-none-fallback",
+    "no-classmethod-utility",
+    "no-mutation-outside-init",
+    "no-xfail-without-reason",
+    "no-weak-assert"
   ]
 }

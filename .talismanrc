@@ -9,7 +9,7 @@ fileignoreconfig:
 - filename: tests/test_lint_gate.py
   checksum: 9f467ff33170c9e4808a7ed69ad5db20fff6bf7f659b24edd0053b445476e643
 - filename: tests/test_ast_grep_rules.py
-  checksum: 9600163368750939afa830da62ce802b36194eb7b791c9e903dfd1f4c7e798b5
+  checksum: 310973b6e4ce906306a191fb06429e43eb40a0015d35769a2cdd10bea9ded80e
 - filename: tests/test_cli.py
   checksum: 989e567d0302fafc30d4e1eaeb4288808e23eac3
 - filename: python_fp_lint/__main__.py

@@ -459,6 +459,243 @@ class TestLoopMutationRule:
 
 
 # ---------------------------------------------------------------------------
+# Type annotation rules (object)
+# ---------------------------------------------------------------------------
+
+
+@needs_sg
+class TestObjectTypeRule:
+    def test_object_param_annotation_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def f(x: object) -> int:\n    return 1\n")
+        assert "no-object-type" in _run_sg(f)
+
+    def test_object_return_annotation_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def f(x: int) -> object:\n    return x\n")
+        assert "no-object-type" in _run_sg(f)
+
+    def test_object_nested_in_generic_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def f(x: dict[str, object]) -> int:\n    return 1\n")
+        assert "no-object-type" in _run_sg(f)
+
+    def test_object_variable_annotation_fails(self, tmp_path):
+        f = _make_file(tmp_path, "x: object = compute()\n")
+        assert "no-object-type" in _run_sg(f)
+
+    def test_object_base_class_passes(self, tmp_path):
+        f = _make_file(tmp_path, "class Base(object):\n    pass\n")
+        assert "no-object-type" not in _run_sg(f)
+
+    def test_concrete_annotation_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def f(x: int) -> str:\n    return str(x)\n")
+        assert "no-object-type" not in _run_sg(f)
+
+
+# ---------------------------------------------------------------------------
+# Null-object rules (or None fallback)
+# ---------------------------------------------------------------------------
+
+
+@needs_sg
+class TestOrNoneFallbackRule:
+    def test_or_none_return_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def f(a):\n    return a or None\n")
+        assert "no-or-none-fallback" in _run_sg(f)
+
+    def test_or_none_assignment_fails(self, tmp_path):
+        f = _make_file(tmp_path, "value = compute() or None\n")
+        assert "no-or-none-fallback" in _run_sg(f)
+
+    def test_or_other_value_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def f(a, b):\n    return a or b\n")
+        assert "no-or-none-fallback" not in _run_sg(f)
+
+    def test_or_empty_default_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def f(a):\n    return a or []\n")
+        assert "no-or-none-fallback" not in _run_sg(f)
+
+
+# ---------------------------------------------------------------------------
+# Static utility rules (classmethod)
+# ---------------------------------------------------------------------------
+
+
+@needs_sg
+class TestClassmethodUtilityRule:
+    def test_classmethod_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "class C:\n    @classmethod\n    def make(cls):\n        return cls()\n",
+        )
+        assert "no-classmethod-utility" in _run_sg(f)
+
+    def test_instance_method_passes(self, tmp_path):
+        f = _make_file(tmp_path, "class C:\n    def make(self):\n        return 1\n")
+        assert "no-classmethod-utility" not in _run_sg(f)
+
+    def test_module_function_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def make():\n    return 1\n")
+        assert "no-classmethod-utility" not in _run_sg(f)
+
+
+# ---------------------------------------------------------------------------
+# Construction rules (attribute assignment outside __init__)
+# ---------------------------------------------------------------------------
+
+
+@needs_sg
+class TestMutationOutsideInitRule:
+    def test_assignment_in_method_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path, "class C:\n    def go(self):\n        self.count = 1\n"
+        )
+        assert "no-mutation-outside-init" in _run_sg(f)
+
+    def test_annotated_assignment_in_method_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path, "class C:\n    def go(self):\n        self.total: int = 2\n"
+        )
+        assert "no-mutation-outside-init" in _run_sg(f)
+
+    def test_assignment_in_init_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path, "class C:\n    def __init__(self, n):\n        self.count = n\n"
+        )
+        assert "no-mutation-outside-init" not in _run_sg(f)
+
+    def test_annotated_assignment_in_init_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "class C:\n    def __init__(self, n):\n        self.total: int = n\n",
+        )
+        assert "no-mutation-outside-init" not in _run_sg(f)
+
+    def test_assignment_in_post_init_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "class C:\n    def __post_init__(self):\n        self.cached = 1\n",
+        )
+        assert "no-mutation-outside-init" not in _run_sg(f)
+
+    def test_nested_function_in_init_passes(self, tmp_path):
+        code = (
+            "class C:\n"
+            "    def __init__(self, n):\n"
+            "        def bind():\n"
+            "            self.count = n\n"
+            "        bind()\n"
+        )
+        f = _make_file(tmp_path, code)
+        assert "no-mutation-outside-init" not in _run_sg(f)
+
+    def test_attribute_read_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path, "class C:\n    def go(self):\n        return self.count\n"
+        )
+        assert "no-mutation-outside-init" not in _run_sg(f)
+
+
+# ---------------------------------------------------------------------------
+# Test-quality rules (xfail reason, weak assertions)
+# ---------------------------------------------------------------------------
+
+
+@needs_sg
+class TestXfailWithoutReasonRule:
+    def test_bare_xfail_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "import pytest\n\n\n@pytest.mark.xfail\ndef test_a():\n    assert f() == 1\n",
+        )
+        assert "no-xfail-without-reason" in _run_sg(f)
+
+    def test_xfail_with_other_kwarg_only_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "import pytest\n\n\n@pytest.mark.xfail(strict=True)\n"
+            "def test_a():\n    assert f() == 1\n",
+        )
+        assert "no-xfail-without-reason" in _run_sg(f)
+
+    def test_xfail_with_reason_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            'import pytest\n\n\n@pytest.mark.xfail(reason="see #42")\n'
+            "def test_a():\n    assert f() == 1\n",
+        )
+        assert "no-xfail-without-reason" not in _run_sg(f)
+
+    def test_xfail_with_reason_and_strict_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            'import pytest\n\n\n@pytest.mark.xfail(strict=True, reason="see #43")\n'
+            "def test_a():\n    assert f() == 1\n",
+        )
+        assert "no-xfail-without-reason" not in _run_sg(f)
+
+    def test_unrelated_decorator_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "import pytest\n\n\n@pytest.mark.slow\ndef test_a():\n    assert f() == 1\n",
+        )
+        assert "no-xfail-without-reason" not in _run_sg(f)
+
+
+@needs_sg
+class TestWeakAssertRule:
+    def test_assert_is_not_none_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert result is not None\n")
+        assert "no-weak-assert" in _run_sg(f)
+
+    def test_assert_len_greater_than_zero_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert len(items) > 0\n")
+        assert "no-weak-assert" in _run_sg(f)
+
+    def test_assert_len_at_least_one_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert len(items) >= 1\n")
+        assert "no-weak-assert" in _run_sg(f)
+
+    def test_assert_containment_fails(self, tmp_path):
+        f = _make_file(tmp_path, 'def test_a():\n    assert "name" in payload\n')
+        assert "no-weak-assert" in _run_sg(f)
+
+    def test_assert_negated_truthiness_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert not flag\n")
+        assert "no-weak-assert" in _run_sg(f)
+
+    def test_assert_bare_identifier_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert value\n")
+        assert "no-weak-assert" in _run_sg(f)
+
+    def test_assert_bare_attribute_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert obj.attr\n")
+        assert "no-weak-assert" in _run_sg(f)
+
+    def test_assert_bare_call_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert isinstance(value, dict)\n")
+        assert "no-weak-assert" in _run_sg(f)
+
+    def test_assert_equality_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert result == expected\n")
+        assert "no-weak-assert" not in _run_sg(f)
+
+    def test_assert_inequality_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert a != b\n")
+        assert "no-weak-assert" not in _run_sg(f)
+
+    def test_assert_len_equals_value_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert len(items) == 3\n")
+        assert "no-weak-assert" not in _run_sg(f)
+
+    def test_assert_subscript_equality_passes(self, tmp_path):
+        f = _make_file(tmp_path, 'def test_a():\n    assert payload["name"] == "x"\n')
+        assert "no-weak-assert" not in _run_sg(f)
+
+    def test_assert_call_comparison_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    assert compute(2) < 5\n")
+        assert "no-weak-assert" not in _run_sg(f)
+
+
+# ---------------------------------------------------------------------------
 # Vacuous test rule — flags test_* functions with no value-comparison assertion
 # (rule lives in rules/disabled/ and is skipped until re-enabled)
 # ---------------------------------------------------------------------------
