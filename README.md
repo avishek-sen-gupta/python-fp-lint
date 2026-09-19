@@ -22,7 +22,7 @@ The unified `LintGate` runs all three backends in sequence. Each backend that is
 | **Set mutation** | `no-set-add`, `no-set-discard` |
 | **Subscript mutation** | `no-subscript-mutation`, `no-subscript-del`, `no-subscript-augmented-mutation`, `no-subscript-tuple-mutation`, `no-setitem-call` |
 | **Augmented assignment** | `no-local-augmented-mutation`, `no-attribute-augmented-mutation` |
-| **None / Optional** | `no-is-none`, `no-is-not-none`, `no-optional-none`, `no-none-default-param`, `no-or-none-fallback` |
+| **None / Optional** | `no-is-none`, `no-is-not-none`, `no-optional-none`, `no-none-default-param`, `no-or-none-fallback`, `no-none-case-pattern` |
 | **Style** | `no-static-method`, `no-classmethod-utility` |
 | **Structural** | `no-deep-nesting`, `no-loop-mutation`, `no-mutation-outside-init` |
 | **Type annotations** | `no-list-dict-param-annotation`, `no-unfrozen-dataclass`, `no-any-type`, `no-object-type` |

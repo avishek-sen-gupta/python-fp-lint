@@ -247,6 +247,34 @@ class TestNoneRules:
         f = _make_file(tmp_path, "x = None\n")
         assert "no-none-default-param" not in _run_sg(f)
 
+    def test_none_case_pattern_fails(self, tmp_path):
+        f = _make_file(tmp_path, "match x:\n    case None:\n        pass\n")
+        assert "no-none-case-pattern" in _run_sg(f)
+
+    def test_none_case_pattern_with_guard_fails(self, tmp_path):
+        f = _make_file(tmp_path, "match x:\n    case None if y:\n        pass\n")
+        assert "no-none-case-pattern" in _run_sg(f)
+
+    def test_none_case_pattern_in_or_pattern_fails(self, tmp_path):
+        f = _make_file(tmp_path, "match x:\n    case None | 1:\n        pass\n")
+        assert "no-none-case-pattern" in _run_sg(f)
+
+    def test_none_case_pattern_nested_in_sequence_fails(self, tmp_path):
+        f = _make_file(tmp_path, "match x:\n    case [None]:\n        pass\n")
+        assert "no-none-case-pattern" in _run_sg(f)
+
+    def test_none_case_pattern_nested_in_class_fails(self, tmp_path):
+        f = _make_file(tmp_path, "match x:\n    case Foo(bar=None):\n        pass\n")
+        assert "no-none-case-pattern" in _run_sg(f)
+
+    def test_none_case_pattern_non_none_case_passes(self, tmp_path):
+        f = _make_file(tmp_path, "match x:\n    case 1:\n        pass\n")
+        assert "no-none-case-pattern" not in _run_sg(f)
+
+    def test_none_case_pattern_none_in_case_body_passes(self, tmp_path):
+        f = _make_file(tmp_path, "match x:\n    case 1:\n        z = None\n")
+        assert "no-none-case-pattern" not in _run_sg(f)
+
 
 @needs_sg
 class TestOptionalNoneRules:
