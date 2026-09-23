@@ -247,6 +247,21 @@ class TestNoneRules:
         f = _make_file(tmp_path, "x = None\n")
         assert "no-none-default-param" not in _run_sg(f)
 
+    def test_none_default_param_annotated_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def f(x: int | None = None):\n    return x\n")
+        assert "no-none-default-param" in _run_sg(f)
+
+    def test_none_default_param_annotated_keyword_only_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def f(*, x: str | None = None):\n    return x\n")
+        assert "no-none-default-param" in _run_sg(f)
+
+    def test_none_default_param_annotated_null_object_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "def f(observer: Observer = NullObserver()):\n    return observer\n",
+        )
+        assert "no-none-default-param" not in _run_sg(f)
+
     def test_none_case_pattern_fails(self, tmp_path):
         f = _make_file(tmp_path, "match x:\n    case None:\n        pass\n")
         assert "no-none-case-pattern" in _run_sg(f)
