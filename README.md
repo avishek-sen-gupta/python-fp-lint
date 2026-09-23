@@ -405,6 +405,19 @@ it. Once this repo has tags, change `rev` in `.pre-commit-config.yaml` or run
 An existing `.pre-commit-config.yaml` is edited textually rather than round-tripped through
 a YAML parser, so your comments and key order survive.
 
+To undo it, from the same project root:
+
+```bash
+/path/to/python-fp-lint/uninstall-precommit.sh
+```
+
+It removes the python-fp-lint block from `.pre-commit-config.yaml` (deleting the file if
+nothing else is left in it) and deletes `.python-fp-lint/`. `fp.json` is deleted only if it
+is still exactly what the installer seeded; otherwise it is kept and `lint_rules_dir` is
+reset to `null`. A `lint_rules_dir` the installer overwrote in a pre-existing `fp.json` is
+not restored. It does not run `pre-commit uninstall`, because that git hook runs every hook
+in the config, not only this one. If python-fp-lint was your only hook, run it yourself.
+
 ### Via the pre-commit framework
 
 To wire it by hand instead, add to your project's `.pre-commit-config.yaml`:
