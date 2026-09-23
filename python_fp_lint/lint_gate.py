@@ -178,14 +178,49 @@ class LintGate:
 # --- shared helpers ---
 
 
+def _git_visible_files(directory: str) -> list[str] | None:
+    """Files under `directory` that git doesn't ignore, tracked or not.
+
+    None when `directory` isn't in a git work tree, or is itself ignored --
+    naming an ignored directory explicitly asks for it to be linted.
+    """
+    try:
+        ignored = subprocess.run(
+            ["git", "-C", directory, "check-ignore", "-q", "."],
+            capture_output=True,
+            timeout=30,
+        )
+        listed = subprocess.run(
+            ["git", "-C", directory, "ls-files", "-z", "-co", "--exclude-standard"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if ignored.returncode == 0 or listed.returncode != 0:
+        return None
+    return [os.path.join(directory, f) for f in listed.stdout.split("\0") if f]
+
+
+def _walk_directory(directory: str) -> list[str]:
+    """Every file under `directory`, minus what git ignores inside a repo."""
+    visible = _git_visible_files(directory)
+    if visible is not None:
+        return visible
+    return [
+        os.path.join(root, f)
+        for root, _dirs, files in os.walk(directory)
+        for f in files
+    ]
+
+
 def _expand_paths(paths: list[str]) -> list[str]:
     """Expand directories, globs, and plain files into a flat list of paths."""
     expanded = []
     for p in paths:
         if os.path.isdir(p):
-            for root, _dirs, files in os.walk(p):
-                for f in files:
-                    expanded.append(os.path.join(root, f))
+            expanded.extend(_walk_directory(p))
         elif any(c in p for c in ("*", "?", "[")):
             expanded.extend(glob.glob(p, recursive=True))
         else:

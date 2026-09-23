@@ -1,5 +1,5 @@
 #!/bin/sh
-# uninstall-lint.sh — python-fp-lint PreToolUse gate uninstaller.
+# uninstall-claude-hook.sh — python-fp-lint PreToolUse gate uninstaller.
 # Removes the hook entries from the project's .claude/settings.json,
 # deactivates the lint gate for this project, removes the /lint command,
 # and removes the plugin directory entirely.

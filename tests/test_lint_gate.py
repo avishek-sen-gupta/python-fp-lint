@@ -205,6 +205,72 @@ class TestLintGateAPI:
 
 
 # ===========================================================================
+# Directory expansion
+# ===========================================================================
+
+
+@pytest.fixture
+def git_tree(tmp_path):
+    """A git repo with tracked, untracked, and gitignored Python files."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", "--template=", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text(".venv/\nbuild/\n")
+    for rel in (
+        "src/tracked.py",
+        "src/new.py",
+        ".venv/lib/site.py",
+        "build/lib/copy.py",
+    ):
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x = 1\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "src/tracked.py"], check=True)
+    return tmp_path
+
+
+def _relative(root, files):
+    return sorted(os.path.relpath(f, root) for f in files)
+
+
+class TestDirectoryExpansion:
+    def test_a_repo_walk_skips_gitignored_files(self, git_tree):
+        from python_fp_lint.lint_gate import _filter_python_files
+
+        assert _relative(git_tree, _filter_python_files([str(git_tree)])) == [
+            "src/new.py",
+            "src/tracked.py",
+        ]
+
+    def test_a_subdirectory_walk_stays_inside_it(self, git_tree):
+        from python_fp_lint.lint_gate import _filter_python_files
+
+        found = _filter_python_files([str(git_tree / "src")])
+        assert _relative(git_tree, found) == ["src/new.py", "src/tracked.py"]
+
+    def test_a_named_ignored_file_is_still_linted(self, git_tree):
+        from python_fp_lint.lint_gate import _filter_python_files
+
+        named = str(git_tree / ".venv/lib/site.py")
+        assert _filter_python_files([named]) == [named]
+
+    def test_a_named_ignored_directory_is_walked_in_full(self, git_tree):
+        from python_fp_lint.lint_gate import _filter_python_files
+
+        found = _filter_python_files([str(git_tree / "build")])
+        assert _relative(git_tree, found) == ["build/lib/copy.py"]
+
+    def test_outside_a_repo_every_file_is_walked(self, tmp_path):
+        from python_fp_lint.lint_gate import _filter_python_files
+
+        (tmp_path / ".gitignore").write_text("skip/\n")
+        (tmp_path / "skip").mkdir()
+        (tmp_path / "skip" / "a.py").write_text("x = 1\n")
+        found = _filter_python_files([str(tmp_path)])
+        assert _relative(tmp_path, found) == ["skip/a.py"]
+
+
+# ===========================================================================
 # Tool-missing scenarios
 # ===========================================================================
 

@@ -92,7 +92,21 @@ class TestPreCommitHooksManifest:
         )
         with open(path) as f:
             hooks = yaml.safe_load(f)
-        assert {h["id"] for h in hooks} == {"python-fp-lint"}
+        by_id = {h["id"]: h for h in hooks}
+        assert set(by_id) == {"python-fp-lint", "python-fp-lint-check"}
         for hook in hooks:
-            assert hook["entry"].startswith("python-fp-lint precommit")
             assert hook["types"] == ["python"]
+        assert by_id["python-fp-lint"]["entry"].startswith("python-fp-lint precommit")
+
+    def test_check_hook_lints_the_worktree_on_demand_only(self):
+        import yaml
+
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), ".pre-commit-hooks.yaml"
+        )
+        with open(path) as f:
+            hook = next(
+                h for h in yaml.safe_load(f) if h["id"] == "python-fp-lint-check"
+            )
+        assert hook["entry"].startswith("python-fp-lint check")
+        assert hook["stages"] == ["manual"]

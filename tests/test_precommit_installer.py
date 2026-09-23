@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 import pytest
+import yaml
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 INSTALL = os.path.join(REPO_ROOT, "install-precommit.sh")
@@ -76,6 +77,48 @@ class TestFreshRepo:
         result = _sh(UNINSTALL, tmp_path, bin_dir)
         assert result.returncode == 1
         assert "not a git repository root" in result.stderr
+
+
+def _hooks(repo):
+    config = yaml.safe_load((repo / ".pre-commit-config.yaml").read_text())
+    (ours,) = [r for r in config["repos"] if r["repo"] == REPO_URL]
+    return {h["id"]: h for h in ours["hooks"]}
+
+
+class TestInstallWiresBothHooks:
+    def test_wires_the_commit_gate_and_the_on_demand_check(self, repo, bin_dir):
+        _install(repo, bin_dir)
+        hooks = _hooks(repo)
+        assert set(hooks) == {"python-fp-lint", "python-fp-lint-check"}
+        for hook in hooks.values():
+            assert hook["args"] == ["--config", "fp.json"]
+
+    def test_adds_the_check_hook_to_an_older_install(self, repo, bin_dir):
+        (repo / ".pre-commit-config.yaml").write_text(
+            "repos:\n"
+            f"  - repo: {REPO_URL}\n"
+            "    rev: main\n"
+            "    hooks:\n"
+            "      - id: python-fp-lint\n"
+            "        args: [--config, fp.json]\n"
+            "  - repo: https://github.com/psf/black\n"
+            "    rev: 24.1.0\n"
+            "    hooks:\n"
+            "      - id: black\n"
+        )
+        _install(repo, bin_dir)
+        assert set(_hooks(repo)) == {"python-fp-lint", "python-fp-lint-check"}
+        assert _hooks(repo)["python-fp-lint-check"]["args"] == ["--config", "fp.json"]
+        assert (
+            "https://github.com/psf/black"
+            in (repo / ".pre-commit-config.yaml").read_text()
+        )
+
+    def test_reinstalling_does_not_duplicate_hooks(self, repo, bin_dir):
+        _install(repo, bin_dir)
+        before = (repo / ".pre-commit-config.yaml").read_text()
+        _install(repo, bin_dir)
+        assert (repo / ".pre-commit-config.yaml").read_text() == before
 
 
 class TestExistingPreCommitConfig:

@@ -75,9 +75,14 @@ try:
 except FileNotFoundError:
     lines = None
 
-if lines is not None and any(url in line for line in lines):
-    print("  already wired, skipping.")
-    sys.exit(0)
+CHECK_ID = "python-fp-lint-check"
+
+
+def hook(pad, hook_id):
+    return [
+        f"{pad}- id: {hook_id}\n",
+        f"{pad}  args: [--config, {os.environ['LINT_CONFIG']}]\n",
+    ]
 
 
 def block(indent):
@@ -86,12 +91,45 @@ def block(indent):
         f"{pad}- repo: {url}\n",
         f"{pad}  rev: {os.environ['REV']}\n",
         f"{pad}  hooks:\n",
-        f"{pad}    - id: python-fp-lint\n",
-        f"{pad}      args: [--config, {os.environ['LINT_CONFIG']}]\n",
+        *hook(pad + "    ", "python-fp-lint"),
+        *hook(pad + "    ", CHECK_ID),
     ]
 
 
-if lines is None:
+def add_check_hook(lines):
+    """Append the on-demand hook after the commit hook of an older install."""
+    gate_re = re.compile(r"^(\s*)-\s+id:\s*python-fp-lint\s*(#.*)?$")
+    found = next(
+        ((i, m) for i, m in enumerate(gate_re.match(x) for x in lines) if m), None
+    )
+    if found is None:
+        return None
+    at, m = found
+    indent = len(m.group(1))
+    end = next(
+        (
+            i
+            for i in range(at + 1, len(lines))
+            if lines[i].strip() and len(lines[i]) - len(lines[i].lstrip()) <= indent
+        ),
+        len(lines),
+    )
+    # Blank lines trailing the hook separate it from what follows; stay above them.
+    while end > at + 1 and not lines[end - 1].strip():
+        end -= 1
+    return [*lines[:end], *hook(m.group(1), CHECK_ID), *lines[end:]]
+
+
+if lines is not None and any(url in line for line in lines):
+    if any(re.search(rf"id:\s*{CHECK_ID}\b", line) for line in lines):
+        print("  already wired, skipping.")
+        sys.exit(0)
+    out = add_check_hook(lines)
+    if out is None:
+        print(f"  already wired, but no python-fp-lint hook found; add {CHECK_ID} by hand.")
+        sys.exit(0)
+    print(f"  already wired, adding the on-demand {CHECK_ID} hook.")
+elif lines is None:
     out = ["repos:\n", *block(2)]
 else:
     repos_at = next(
@@ -129,6 +167,9 @@ fi
 echo ""
 echo "Done. python-fp-lint wired for $PROJECT_DIR."
 echo "Rules are configured in $LINT_CONFIG; rule files live in $RULES_DIR/."
+echo ""
+echo "To lint the working tree without committing:"
+echo "  pre-commit run python-fp-lint-check --hook-stage manual --all-files"
 echo ""
 echo "IMPORTANT: never place a .gitignore inside $RULES_DIR/."
 echo "ast-grep silently matches nothing when an ignore file inside the rules"

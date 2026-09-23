@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-lint.sh — python-fp-lint PreToolUse gate installer.
+# install-claude-hook.sh — python-fp-lint PreToolUse gate installer.
 # Installs the lint-check hook that blocks Edit/Write introducing new FP violations.
 # Run from the root of the project you want to wire (it must have a .claude/ directory).
 # Requires: jq, python-fp-lint (uv run python -m python_fp_lint)

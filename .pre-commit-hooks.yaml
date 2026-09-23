@@ -12,3 +12,16 @@
   types: [python]
   pass_filenames: true
   require_serial: true
+# On-demand variant: lints working-tree files rather than staged blobs, and
+# never runs at commit. Run it with:
+#
+#   pre-commit run python-fp-lint-check --hook-stage manual --all-files
+- id: python-fp-lint-check
+  name: python-fp-lint (worktree)
+  description: Lint working-tree Python files on demand; not part of the commit gate
+  entry: python-fp-lint check --strict
+  language: python
+  types: [python]
+  pass_filenames: true
+  require_serial: true
+  stages: [manual]

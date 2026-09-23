@@ -103,7 +103,16 @@ uv run python -m python_fp_lint check --config fp.json file1.py file2.py
 uv run python -m python_fp_lint check --config fp.json src/
 uv run python -m python_fp_lint check --config fp.json 'src/**/*.py'
 uv run python -m python_fp_lint check --config fp.json src/ tests/test_foo.py 'lib/*.py'
+
+# The whole repo, tracked or not, committed or not
+python-fp-lint check --config fp.json .
 ```
+
+Inside a git repo, a directory argument expands to every file git doesn't ignore: tracked files
+plus untracked ones, minus anything matched by `.gitignore`, `.git/info/exclude`, or your global
+excludes. So `check .` skips `.venv/`, `build/`, and the like without any `exclude` config.
+Outside a git repo, a directory is walked in full. What you name explicitly is always linted:
+a file, a glob, or a directory that is itself ignored (`check .venv/` walks all of it).
 
 ### Configuring rules
 
@@ -310,12 +319,14 @@ Run from the root of the project you want to protect (must have a `.claude/` dir
 
 ```bash
 # From the python-fp-lint repo
-./install-lint.sh
+./install-claude-hook.sh
 ```
 
 This copies the hook to `~/.claude/plugins/python-fp-lint/` and wires `Edit` and `Write` matchers into `.claude/settings.json`.
 
 Requires: `jq`, `python-fp-lint` reachable via `uv run python -m python_fp_lint`.
+
+To remove it, run `./uninstall-claude-hook.sh` from the same project root.
 
 ### Usage
 
@@ -340,9 +351,9 @@ When a violation is introduced, the tool call is blocked with a message listing 
 uv run pytest tests/ -x -q
 
 # Individual test files
-uv run pytest tests/test_ast_grep_rules.py -x -q   # 63 tests
-uv run pytest tests/test_lint_gate.py -x -q         # 24 tests
-uv run pytest tests/test_cli.py -x -q               # 17 tests
+uv run pytest tests/test_ast_grep_rules.py -x -q
+uv run pytest tests/test_lint_gate.py -x -q
+uv run pytest tests/test_cli.py -x -q
 uv run pytest tests/test_reassignment_gate.py -x -q
 uv run pytest tests/test_result.py -x -q
 ```
@@ -354,7 +365,7 @@ The test suite includes a self-lint integration test that runs `LintGate` on thi
 GitHub Actions runs on every push to `main` and on pull requests. The pipeline tests on Python 3.13 with:
 
 1. **Black** — formatting check
-2. **pytest** — full test suite (210 tests)
+2. **pytest** — full test suite
 
 See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
@@ -387,9 +398,10 @@ From the root of the project you want to gate:
 ```
 
 It copies the 27 ast-grep rule files into `.python-fp-lint/` at the repo root, seeds `fp.json`
-from `config.example.json` with `lint_rules_dir` pointing there, wires the hook into
-`.pre-commit-config.yaml`, and runs `pre-commit install`. Re-running refreshes the rules and
-leaves everything else alone.
+from `config.example.json` with `lint_rules_dir` pointing there, wires the commit gate and the
+on-demand [`python-fp-lint-check`](#linting-without-committing) hook into
+`.pre-commit-config.yaml`, and runs `pre-commit install`. Re-running refreshes the rules, adds
+the check hook if it is missing, and leaves everything else alone.
 
 **Never place a `.gitignore` inside `.python-fp-lint/`.** ast-grep silently matches nothing when
 an ignore file inside the rules directory excludes them — the gate then passes everything while
@@ -429,6 +441,33 @@ repos:
     hooks:
       - id: python-fp-lint
         args: [--config, fp.json]   # required
+      - id: python-fp-lint-check    # optional: on-demand, never runs at commit
+        args: [--config, fp.json]
+```
+
+### Linting without committing
+
+The commit gate only ever sees staged blobs. To lint the working tree on demand, the installer
+also wires `python-fp-lint-check`, which runs `python-fp-lint check` at pre-commit's `manual`
+stage, so a commit never triggers it:
+
+```bash
+pre-commit run python-fp-lint-check --hook-stage manual --all-files        # every tracked file
+pre-commit run python-fp-lint-check --hook-stage manual --files src/app.py # specific files
+```
+
+`--all-files` means files git knows about. A brand-new file you haven't `git add`ed is skipped,
+so name it with `--files`. Re-running `install-precommit.sh` adds this hook to a project wired
+before it existed.
+
+To lint the entire repo regardless of git state (tracked, untracked, staged or not), skip
+pre-commit and point `check` at the root. Directory walks honour `.gitignore`, so this covers
+your code and not your virtualenv:
+
+```bash
+python-fp-lint check --config fp.json .
+# or, with nothing installed:
+uvx --from git+https://github.com/avishek-sen-gupta/python-fp-lint python-fp-lint check --config fp.json .
 ```
 
 pre-commit builds an isolated environment from this repo, so ast-grep and Ruff come along
@@ -476,8 +515,10 @@ bin/
 commands/
 └── lint.md                # /lint slash command for Claude Code
 
-install-lint.sh            # Wires hook into a project's .claude/settings.json
+install-claude-hook.sh     # Wires hook into a project's .claude/settings.json
+uninstall-claude-hook.sh   # Undoes install-claude-hook.sh
 install-precommit.sh       # Wires hook into a project's .pre-commit-config.yaml
+uninstall-precommit.sh     # Undoes install-precommit.sh
 .pre-commit-hooks.yaml     # Hook manifest for the pre-commit framework
 ```
 
