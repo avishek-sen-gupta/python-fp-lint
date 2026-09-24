@@ -98,6 +98,18 @@ class TestPreCommitHooksManifest:
             assert hook["types"] == ["python"]
         assert by_id["python-fp-lint"]["entry"].startswith("python-fp-lint precommit")
 
+    def test_commit_gate_runs_only_at_the_pre_commit_stage(self):
+        """Unset `stages` means every installed stage: with a commit-msg hook
+        also installed, the gate would run a second time per commit."""
+        import yaml
+
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), ".pre-commit-hooks.yaml"
+        )
+        with open(path) as f:
+            hook = next(h for h in yaml.safe_load(f) if h["id"] == "python-fp-lint")
+        assert hook["stages"] == ["pre-commit"]
+
     def test_check_hook_lints_the_worktree_on_demand_only(self):
         import yaml
 

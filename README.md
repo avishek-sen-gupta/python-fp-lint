@@ -410,9 +410,18 @@ package normally lands in `.venv`, whose self-ignoring `.gitignore` triggers exa
 Listing `.python-fp-lint/` in the repo's *root* `.gitignore` tests fine, but committing the
 directory is safer, since CI needs it too.
 
-It pins `rev: main`, which is a mutable reference — pre-commit clones it once and never updates
-it. Once this repo has tags, change `rev` in `.pre-commit-config.yaml` or run
-`pre-commit autoupdate`. The script says so on completion.
+It tracks `main`. pre-commit never re-fetches a branch name (`rev: main` is cloned once, then
+frozen, and warned about on every run), so the script instead runs
+`pre-commit autoupdate --bleeding-edge` to pin `rev` to the SHA at the tip of `main`. To move to
+the latest `main` later, re-run the script or:
+
+```bash
+pre-commit autoupdate --bleeding-edge --repo https://github.com/avishek-sen-gupta/python-fp-lint
+```
+
+Scope it with `--repo` as shown: a bare `--bleeding-edge` moves *every* repo in your config to
+its default branch. If the update fails (offline, say), the script warns, leaves `rev: main`,
+and carries on.
 
 An existing `.pre-commit-config.yaml` is edited textually rather than round-tripped through
 a YAML parser, so your comments and key order survive.
@@ -443,6 +452,16 @@ repos:
         args: [--config, fp.json]   # required
       - id: python-fp-lint-check    # optional: on-demand, never runs at commit
         args: [--config, fp.json]
+```
+
+The `python-fp-lint` hook declares `stages: [pre-commit]`, so it runs once per commit even when
+the repo also installs a `commit-msg` hook. Your own hooks don't get that for free: pre-commit
+runs a hook with no `stages:` at *every* installed stage, so with a `commit-msg` hook installed,
+each of them runs twice per commit (`always_run` hooks in full, the rest as "no files to check"
+noise). Set this at the top of `.pre-commit-config.yaml` to stop that:
+
+```yaml
+default_stages: [pre-commit]
 ```
 
 ### Linting without committing

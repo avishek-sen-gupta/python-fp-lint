@@ -154,13 +154,23 @@ with open(path, "w", encoding="utf-8") as f:
 print(f"  wrote {path}")
 PY
 
-# --- activate ---
+# --- activate, tracking main ---
+# pre-commit never re-fetches a branch name: `rev: main` is cloned once and
+# frozen. Tracking main means rewriting rev to main's current SHA, which is
+# what --bleeding-edge does; each re-run of this script moves it forward.
+UPDATE_CMD="pre-commit autoupdate --bleeding-edge --repo $REPO_URL"
 if command -v pre-commit > /dev/null 2>&1; then
+  echo "Pinning rev to the tip of main..."
+  if ! $UPDATE_CMD; then
+    echo "Warning: could not update rev (offline?); it stays '$REV' for now."
+    echo "Re-run this script, or: $UPDATE_CMD"
+  fi
   echo "Running pre-commit install..."
   pre-commit install
 else
   echo ""
   echo "Note: pre-commit is not on PATH. Install it, then run:"
+  echo "  $UPDATE_CMD"
   echo "  pre-commit install"
 fi
 
@@ -171,12 +181,11 @@ echo ""
 echo "To lint the working tree without committing:"
 echo "  pre-commit run python-fp-lint-check --hook-stage manual --all-files"
 echo ""
+echo "To move to the latest python-fp-lint main later, re-run this script or:"
+echo "  $UPDATE_CMD"
+echo ""
 echo "IMPORTANT: never place a .gitignore inside $RULES_DIR/."
 echo "ast-grep silently matches nothing when an ignore file inside the rules"
 echo "directory excludes them, so the gate becomes a no-op that still reports"
 echo "success. Listing $RULES_DIR/ in the repo's root .gitignore is fine, but"
 echo "committing the directory is safer -- CI needs it too."
-echo ""
-echo "Note: rev is '$REV', a mutable reference. pre-commit clones it once and"
-echo "never updates it. Once this repo has tags, change rev in"
-echo ".pre-commit-config.yaml or run: pre-commit autoupdate"

@@ -12,6 +12,10 @@
   types: [python]
   pass_filenames: true
   require_serial: true
+  # It lints staged blobs, which only means something at pre-commit. Left
+  # unset, it would run at every installed stage -- a second time per commit
+  # in any repo that also installs a commit-msg hook.
+  stages: [pre-commit]
 # On-demand variant: lints working-tree files rather than staged blobs, and
 # never runs at commit. Run it with:
 #

@@ -121,6 +121,36 @@ class TestInstallWiresBothHooks:
         assert (repo / ".pre-commit-config.yaml").read_text() == before
 
 
+@pytest.fixture
+def fake_pre_commit(bin_dir, tmp_path_factory):
+    """A `pre-commit` on PATH that logs each invocation instead of running."""
+    log = tmp_path_factory.mktemp("log") / "calls"
+    script = bin_dir / "pre-commit"
+    script.write_text(f'#!/bin/sh\necho "$*" >> {log}\n')
+    script.chmod(0o755)
+    return log
+
+
+class TestTracksMain:
+    def test_moves_rev_to_the_tip_of_main_before_installing(
+        self, repo, bin_dir, fake_pre_commit
+    ):
+        _install(repo, bin_dir)
+        assert fake_pre_commit.read_text().splitlines() == [
+            f"autoupdate --bleeding-edge --repo {REPO_URL}",
+            "install",
+        ]
+
+    def test_a_failed_update_still_installs(self, repo, bin_dir, fake_pre_commit):
+        (bin_dir / "pre-commit").write_text(
+            f'#!/bin/sh\necho "$*" >> {fake_pre_commit}\n'
+            '[ "$1" = autoupdate ] && exit 1\nexit 0\n'
+        )
+        result = _install(repo, bin_dir)
+        assert fake_pre_commit.read_text().splitlines()[-1] == "install"
+        assert "could not update rev" in result.stdout
+
+
 class TestExistingPreCommitConfig:
     ORIGINAL = (
         "# project hooks\n"
