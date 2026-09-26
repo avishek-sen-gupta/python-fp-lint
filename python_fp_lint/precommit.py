@@ -16,18 +16,33 @@ from python_fp_lint.lint_gate import LintGate
 from python_fp_lint.result import LintResult, LintViolation
 
 
-def git_output(repo_root: str, *args: str) -> str:
-    """Run git in repo_root and return stdout, raising on a non-zero exit."""
+def git_bytes(repo_root: str, *args: str) -> bytes:
+    """Run git in repo_root and return raw stdout, raising on a non-zero exit.
+
+    Bytes rather than text because the callers include `git show :path`, whose
+    stdout is a tracked blob. A repo is entitled to hold a latin-1 (or any
+    other non-UTF-8) source file, and decoding one here would abort the whole
+    run inside subprocess with a UnicodeDecodeError rather than lint it.
+    """
     result = subprocess.run(
         ["git", *args],
         capture_output=True,
-        text=True,
         cwd=repo_root,
         timeout=30,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"git {' '.join(args)} failed: {stderr}")
     return result.stdout
+
+
+def git_output(repo_root: str, *args: str) -> str:
+    """`git_bytes` decoded for the commands whose stdout is a path list.
+
+    `surrogateescape` so that a path git cannot round-trip through UTF-8 still
+    survives as a usable str rather than raising.
+    """
+    return git_bytes(repo_root, *args).decode("utf-8", errors="surrogateescape")
 
 
 def staged_python_files(repo_root: str) -> list[str]:
@@ -42,13 +57,16 @@ def materialize_staged(repo_root: str, paths: list[str], dest: str) -> dict[str,
     """Write each staged blob under dest, mirroring its repo-relative path.
 
     Returns a map of materialized absolute path -> repo-relative path.
+
+    Bytes in, bytes out: the blob is copied verbatim, so a non-UTF-8 source
+    file is linted rather than crashing the gate on the way to the temp tree.
     """
 
     def write_blob(path: str) -> str:
         target = os.path.join(dest, path)
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        with open(target, "w", encoding="utf-8") as f:
-            f.write(git_output(repo_root, "show", f":{path}"))
+        with open(target, "wb") as f:
+            f.write(git_bytes(repo_root, "show", f":{path}"))
         return os.path.abspath(target)
 
     return {write_blob(path): path for path in paths}

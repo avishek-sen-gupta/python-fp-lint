@@ -80,6 +80,29 @@ class TestStagedDiscovery:
         assert "staged = 2" in content
         assert "worktree_only" not in content
 
+    def test_materialize_copies_a_non_utf8_blob_verbatim(self, repo, tmp_path):
+        """C2: `git show` used to decode its stdout and die on latin-1."""
+        latin1 = b'# caf\xe9\nd = {}\nd["k"] = 1\n'
+        (repo / "legacy.py").write_bytes(latin1)
+        _git(repo, "add", "legacy.py")
+        dest = tmp_path / "out"
+        dest.mkdir()
+        mapping = materialize_staged(str(repo), ["legacy.py"], str(dest))
+        [(materialized, _)] = mapping.items()
+        assert open(materialized, "rb").read() == latin1
+
+    def test_non_utf8_staged_file_is_linted_not_crashed(self, repo):
+        """It reports Ruff's E902, rather than dying in the materializer."""
+        (repo / "legacy.py").write_bytes(b'# caf\xe9\nd = {}\nd["k"] = 1\n')
+        _git(repo, "add", "legacy.py")
+        result = _run_precommit(repo)
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "Traceback" not in result.stderr
+        data = json.loads(result.stdout)
+        assert [(v["rule"], v["file"]) for v in data["violations"]] == [
+            ("E902", "legacy.py")
+        ]
+
 
 class TestPrecommitCLI:
     def test_clean_staged_change_passes(self, repo):
