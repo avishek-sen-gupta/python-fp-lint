@@ -65,7 +65,10 @@ Two consequences the operator owns:
 The tree that would exist if the commit landed — the index, not the worktree.
 
 ```
-git checkout-index -a --prefix=<workdir>/     # the whole index, one call
+git ls-files -u                                       # must be empty
+git checkout-index -a --ignore-skip-worktree-bits \
+                      --prefix=<workdir>/             # the whole index, one call
+assert {*.py under <workdir>} == {*.py in git ls-files}
 lint(*.py under <workdir>)
 ```
 
@@ -76,9 +79,12 @@ Materializing everything is what makes the total a function of the index *by
 construction*. An earlier design linted clean files in place and materialized only the
 dirty subset, which kept this to a handful of `git show` calls — but it wrote `.py`
 files alone, so Ruff found no `pyproject.toml` or `ruff.toml` above them. Ruff resolves
-`per-file-ignores`, `extend-exclude` and the rest of its directory-scoped settings from
-the closest config file in a scanned file's ancestors, so those settings applied to a
-file only while its worktree copy happened to match its index entry. Appending a blank
+`per-file-ignores` and the rest of its directory-scoped settings from the closest config
+file in a scanned file's ancestors, so those settings applied to a file only while its
+worktree copy happened to match its index entry. (`exclude` / `extend-exclude` are not
+among them: Ruff honours those for an explicitly named path only under `force-exclude`,
+and the gate always names paths explicitly. This project's own `exclude` key is the
+supported way to drop a file.) Appending a blank
 line to an excluded legacy file — leaving the index content byte-identical — changed the
 total. `checkout-index` brings the config files along, and the "handful of git calls"
 optimisation is deliberately given up for that.
@@ -95,6 +101,27 @@ Git writes the blobs itself, so a tracked file that is not valid UTF-8 is materi
 verbatim rather than decoded. `precommit.materialize_staged`, which the non-ratchet
 staged gate still uses, reads and writes the same blobs as bytes for the same reason.
 
+#### The materialization is checked, not trusted
+
+`git checkout-index -a` can decline to write an index entry and still exit 0 with no
+diagnostic. Two cases matter, and under auto-tighten both are unrecoverable: the missing
+files' violations vanish, the total falls, and the lower number is written and staged.
+
+- **Skip-worktree bits.** A sparse checkout marks everything outside the cone
+  skip-worktree, and those paths are passed over silently. A monorepo developer's ordinary
+  `git commit` would bank a windfall. `--ignore-skip-worktree-bits` writes them anyway: the
+  index is the whole index whether or not the worktree materializes all of it.
+- **Unmerged entries.** A conflicted path is skipped and the rest written, exit 0. `git
+  commit` refuses with unmerged entries so the hook path is protected, but a manual or CI
+  `precommit` / `baseline update` mid-conflict would record a too-low number.
+
+So the index is rejected outright when `git ls-files -u` is non-empty, and after
+materialization the `.py` set on disk is asserted against `git ls-files -z`. A shortfall
+raises `RatchetError` naming the first missing path — exit 2, never a total. Failures of
+the `git` calls themselves raise `RatchetError` too, so they exit 2 rather than as a
+traceback (an index holding both `Mod.py` and `mod.py` on a case-insensitive filesystem
+is enough to trigger one).
+
 ### The verdict
 
 | Condition | Exit | Behaviour |
@@ -102,25 +129,28 @@ staged gate still uses, reads and writes the same blobs as bytes for the same re
 | `total > baseline` | 1 | Print `ratchet: 4312 → 4315 (+3)`, then the regression report below. The baseline file is not touched. |
 | `total == baseline` | 0 | Silent. |
 | `total < baseline`, tightening | 0 | Rewrite the file to the new total, `git add` it, print `ratchet: 4312 → 4309 (-3)`. |
-| `total < baseline`, `--no-tighten` | 0 | Print `ratchet: 4312 → 4309 (-3) — not tightened (--no-tighten); run `baseline update` to record it`. The file is not touched. |
+| `total < baseline`, `--no-tighten` | 0 | Print ``ratchet: 4312 → 4309 (-3) — not tightened (--no-tighten); run `baseline update` to record it``. The file is not touched. |
 
 #### The regression report
 
-Which violations get named depends on whether anything is staged.
+The condition is **whether the staged filter produced anything**, not whether anything is
+staged. A blocked commit that names no violation is the failure mode this section exists
+to prevent, and an empty staged set is only one of the ways to reach it.
 
-**Something is staged** — a developer's commit. Only the staged files' violations are
-listed, followed by `N further violation(s) in the rest of the repo, in files you did
+**The filter produced something** — the ordinary commit. Only the staged files' violations
+are listed, followed by `N further violation(s) in the rest of the repo, in files you did
 not stage`, where `N` is `total - len(staged violations)`. This is what makes a
 total-based ratchet usable: the raw list is thousands of lines on the codebase this
 feature exists for, and the regression is almost always in what the developer just
 touched. The full list stays available through `check`.
 
-**Nothing is staged** — CI on a fresh checkout. Filtering to the staged set would leave
-the report empty, which is the one case where the tool has to say something: there is no
-developer at a terminal to run `check`. The full list is printed instead, capped at 50,
-with a trailing `… and N more (run `check` for the full list)` when it overflows. There
-is no "further … elsewhere" line, because with nothing staged there is no *here* for a
-remainder to be further than.
+**The filter produced nothing** — either nothing is staged (CI on a fresh checkout) or
+everything staged is clean (a baseline stale against the index, after a pull, a merge or
+someone else's commit). There is no local list to show, and showing an empty one blocks a
+commit while naming nothing. The full list is printed instead, capped at 50, with a
+trailing ``… and N more (run `check` for the full list)`` when it overflows. There is no
+"further … elsewhere" line, because there is no *here* for a remainder to be further
+than.
 
 #### JSON output
 
@@ -195,6 +225,10 @@ timeout realistic for a whole-repo scan.
   violations, plus the count of the remainder.
 - A rise with **nothing** staged names the violations rather than printing an empty
   report, and caps the list.
+- A rise whose staged files are all clean does the same.
+- A sparse checkout counts a file outside the cone, and does not tighten.
+- An unmerged index, and a materialization that came up short, each exit 2 without
+  producing a total.
 - `violation_count` and `reported_violation_count` differ when the report is filtered,
   and `reported_violation_count == len(violations)` always.
 - A fall rewrites the baseline and stages it; `git diff --cached` shows the file.

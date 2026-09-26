@@ -569,14 +569,16 @@ That is what CI uses: in a fresh checkout the index is HEAD and nothing is stage
 
 ### What a blocked commit prints
 
-With files staged — a normal commit — only your staged files' violations are listed, then
+When your staged files carry violations, only those are listed, then
 `N further violation(s) in the rest of the repo, in files you did not stage`. The raw list
 runs to thousands of lines on the codebases this exists for, and the regression is almost
 always in what you just touched. `check` still prints everything.
 
-With **nothing** staged — CI — there is nothing to filter to, so the whole list is printed
-instead of an empty report, capped at 50 entries with a trailing
-``… and N more (run `check` for the full list)``.
+When they carry none, there is nothing local to show, so the whole list is printed instead
+of an empty report, capped at 50 entries with a trailing
+``… and N more (run `check` for the full list)``. That covers CI, where nothing is staged
+at all, and the stale-baseline case — after a pull or a merge the total can sit above the
+recorded number while everything you staged is clean.
 
 `--format json` in ratchet mode carries two counts, because the printed list is a subset:
 
@@ -598,9 +600,22 @@ are not counted, because they are not part of the commit; unstaged edits are not
 either, because they are not part of the commit yet.
 
 The whole index is written, not just the `.py` files, so a `pyproject.toml` or `ruff.toml`
-carrying `per-file-ignores` or `extend-exclude` applies exactly as it does when you run Ruff
-yourself. That is why the number CI computes matches the number you get locally with a dirty
-tree, and why merely touching an excluded file does not move it.
+carrying `per-file-ignores` applies exactly as it does when you run Ruff yourself. (Ruff's
+`exclude` / `extend-exclude` are not in that set: the gate always names paths explicitly,
+and Ruff honours those settings for explicitly named paths only under `force-exclude`. Use
+this project's own `exclude` key instead.) Materializing the config files is why the number
+CI computes matches the number you get locally with a dirty tree, and why merely touching
+an excluded file does not move it.
+
+Two states are refused rather than counted, because both would silently under-count and
+auto-tighten would then bank the shortfall:
+
+- **An unmerged index.** `git commit` refuses one anyway; a manual or CI run exits 2.
+- **A tracked file git declined to write.** Every tracked `.py` file is checked off against
+  `git ls-files` after materialization; a shortfall exits 2 naming the first missing path.
+
+A **sparse checkout** is counted in full: the index is the whole index whether or not your
+worktree materializes all of it, so a file outside your cone still contributes.
 
 Two things the number is sensitive to:
 
