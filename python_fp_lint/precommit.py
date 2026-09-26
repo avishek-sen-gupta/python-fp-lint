@@ -16,7 +16,8 @@ from python_fp_lint.lint_gate import LintGate
 from python_fp_lint.result import LintResult, LintViolation
 
 
-def _git(repo_root: str, *args: str) -> str:
+def git_output(repo_root: str, *args: str) -> str:
+    """Run git in repo_root and return stdout, raising on a non-zero exit."""
     result = subprocess.run(
         ["git", *args],
         capture_output=True,
@@ -31,7 +32,9 @@ def _git(repo_root: str, *args: str) -> str:
 
 def staged_python_files(repo_root: str) -> list[str]:
     """Repo-relative paths of staged .py files (added/copied/modified/renamed)."""
-    out = _git(repo_root, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z")
+    out = git_output(
+        repo_root, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"
+    )
     return [p for p in out.split("\0") if p.endswith(".py")]
 
 
@@ -45,7 +48,7 @@ def materialize_staged(repo_root: str, paths: list[str], dest: str) -> dict[str,
         target = os.path.join(dest, path)
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, "w", encoding="utf-8") as f:
-            f.write(_git(repo_root, "show", f":{path}"))
+            f.write(git_output(repo_root, "show", f":{path}"))
         return os.path.abspath(target)
 
     return {write_blob(path): path for path in paths}

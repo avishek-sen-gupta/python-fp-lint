@@ -38,7 +38,7 @@ class ReassignmentGate:
             with open(filepath) as f:
                 source = f.read()
             tree = ast.parse(source, filename=filepath)
-        except (SyntaxError, OSError):
+        except (SyntaxError, UnicodeDecodeError, OSError):
             return []
 
         duc = beniget.DefUseChains()
