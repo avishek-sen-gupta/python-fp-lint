@@ -285,6 +285,22 @@ class TestBaselineCommand:
         assert result.returncode == 2
         assert "no baseline configured" in result.stderr
 
+    def test_update_into_a_missing_directory_exits_two(self, tmp_path):
+        """M1: a raw FileNotFoundError traceback, not a one-line error."""
+        repo = self._repo(tmp_path)
+        result = self._run(
+            repo,
+            "baseline",
+            "update",
+            "--config",
+            CONFIG,
+            "--baseline",
+            str(repo / "absent" / "b.json"),
+        )
+        assert result.returncode == 2
+        assert "Traceback" not in result.stderr
+        assert "cannot write baseline file" in result.stderr
+
 
 class TestBaselineRefusesToGuess:
     """A backend that cannot run contributes zero violations, which would read
@@ -436,6 +452,145 @@ class TestPrecommitRatchet:
         assert "other.py" in result.stdout
         assert "mod.py" not in result.stdout
         assert "1 further violation" in result.stdout
+        assert "did not stage" in result.stdout
+
+    def _run_text(self, repo, *args):
+        return subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "python_fp_lint",
+                "precommit",
+                "--config",
+                str(repo / "fp.json"),
+                *args,
+            ],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        )
+
+    def test_no_tighten_on_a_fall_says_so(self, tmp_path):
+        """I1: silence here is how a recorded total drifts above reality."""
+        repo = self._repo(tmp_path, self.DIRTY, baseline_total=5)
+        result = self._run_text(repo, "--no-tighten")
+        assert result.returncode == 0
+        assert "ratchet: 5 → 1 (-4)" in result.stdout
+        assert "--no-tighten" in result.stdout
+        assert "baseline update" in result.stdout
+
+    def test_regression_with_nothing_staged_names_the_violations(self, tmp_path):
+        """I2: the CI case. Filtering to a staged set of none printed nothing."""
+        repo = self._repo(tmp_path, self.DIRTIER, baseline_total=1)
+        result = self._run_text(repo, "--no-tighten")
+        assert result.returncode == 1
+        assert "ratchet: 1 → 2 (+1)" in result.stdout
+        assert result.stdout.count("mod.py:") == 2
+        assert "further violation" not in result.stdout
+
+    def test_regression_with_nothing_staged_caps_the_list(self, tmp_path):
+        repo = self._repo(tmp_path, self.DIRTIER, baseline_total=1)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys;"
+                "import python_fp_lint.__main__ as m;"
+                "m._MAX_REPORTED_VIOLATIONS = 1;"
+                "sys.argv = ['python-fp-lint', 'precommit', '--config', "
+                f"{str(repo / 'fp.json')!r}];"
+                "m.main()",
+            ],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        )
+        assert result.returncode == 1
+        assert "… and 1 more (run `check` for the full list)" in result.stdout
+
+    def test_json_counts_do_not_contradict_each_other(self, tmp_path):
+        """I3: violation_count is the repo; the array has its own count."""
+        repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
+        (repo / "other.py").write_text(self.DIRTIER)
+        subprocess.run(["git", "add", "other.py"], cwd=repo, check=True)
+        data = json.loads(self._run(repo).stdout)
+        assert data["violation_count"] == 3
+        assert data["reported_violation_count"] == 2
+        assert len(data["violations"]) == data["reported_violation_count"]
+        assert {v["file"] for v in data["violations"]} == {"other.py"}
+
+    def test_json_with_nothing_staged_lists_the_violations(self, tmp_path):
+        repo = self._repo(tmp_path, self.DIRTIER, baseline_total=1)
+        data = json.loads(self._run(repo, "--no-tighten").stdout)
+        assert data["violation_count"] == 2
+        assert data["reported_violation_count"] == 2
+        assert len(data["violations"]) == 2
+
+
+class TestSchemaCommand:
+    def _schema(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "python_fp_lint", "schema"],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        )
+        assert result.returncode == 0
+        return json.loads(result.stdout)
+
+    def test_describes_the_ratchet_output(self):
+        props = self._schema()["precommit_ratchet_output"]["properties"]
+        assert set(props["ratchet"]["properties"]) == {
+            "baseline",
+            "total",
+            "tightened",
+        }
+
+    def test_describes_both_counts(self):
+        props = self._schema()["precommit_ratchet_output"]["properties"]
+        assert "reported_violation_count" in props
+        assert "NOT the length" in props["violation_count"]["description"]
+
+
+class TestBaselineFlagScope:
+    """M2: --baseline on `check` was accepted and silently ignored."""
+
+    def test_check_rejects_baseline(self, tmp_path):
+        (tmp_path / "m.py").write_text("x = 1\n")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "python_fp_lint",
+                "check",
+                "--config",
+                CONFIG,
+                "--baseline",
+                "/nonexistent/x.json",
+                str(tmp_path / "m.py"),
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        )
+        assert result.returncode == 2
+        assert "unrecognized arguments: --baseline" in result.stderr
+
+    def test_precommit_and_baseline_still_accept_it(self):
+        for argv in (
+            ["precommit", "--help"],
+            ["baseline", "update", "--help"],
+            ["baseline", "show", "--help"],
+        ):
+            result = subprocess.run(
+                [sys.executable, "-m", "python_fp_lint", *argv],
+                capture_output=True,
+                text=True,
+                env={**os.environ, "PYTHONPATH": REPO_ROOT},
+            )
+            assert "--baseline" in result.stdout, argv
 
 
 class TestPrecommitWithoutBaselineIsUnchanged:

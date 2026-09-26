@@ -177,18 +177,39 @@ def _git_repo_root() -> str:
     return result.stdout.strip()
 
 
-def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
-    """Print a ratchet verdict and exit 0 (clean or tightened) or 1 (regression).
+_MAX_REPORTED_VIOLATIONS = 50
 
-    On a regression only the staged files' violations are listed. The raw list
-    runs to thousands of lines on the codebases this feature exists for, and
-    the regression is almost always in what was just touched; `check` still
-    prints everything.
+
+def _reported_violations(violations, staged: set[str]) -> list:
+    """The subset of the repo's violations a ratchet report shows.
+
+    With files staged, the staged ones. The raw list runs to thousands of
+    lines on the codebases this feature exists for, and the regression is
+    almost always in what was just touched; `check` still prints everything.
+
+    With nothing staged -- CI on a fresh checkout, which is exactly what
+    `--no-tighten` is for -- there is no "just touched" to filter to, and
+    filtering would leave the report empty and unactionable. The whole list is
+    shown instead, capped, with the caller printing how many were dropped.
     """
+    if staged:
+        return [v for v in violations if v.file in staged]
+    return list(violations[:_MAX_REPORTED_VIOLATIONS])
+
+
+def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
+    """Print a ratchet verdict and exit 0 (clean or tightened) or 1 (regression)."""
+    reported = _reported_violations(violations, staged)
+    remainder = len(violations) - len(reported)
+
     if fmt == "json":
         payload = {
             "passed": not verdict.regressed,
+            # The repo-wide total, which is what the ratchet compares; the
+            # length of `violations` below is `reported_violation_count`, and
+            # the two differ whenever the report is filtered or capped.
             "violation_count": len(violations),
+            "reported_violation_count": len(reported),
             "ratchet": {
                 "baseline": verdict.recorded,
                 "total": verdict.total,
@@ -196,23 +217,32 @@ def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
             },
             "violations": [
                 {"rule": v.rule, "file": v.file, "line": v.line, "message": v.message}
-                for v in violations
-                if v.file in staged
+                for v in reported
             ],
         }
         json.dump(payload, sys.stdout, indent=2)
         print()
     elif verdict.regressed:
         print(f"ratchet: {verdict.recorded} → {verdict.total} (+{verdict.delta})")
-        local = [v for v in violations if v.file in staged]
-        for v in local:
+        for v in reported:
             loc = f"{v.file}:{v.line}" if v.line else v.file
             print(f"  [{v.rule}] {loc} — {v.message}")
-        elsewhere = len(violations) - len(local)
-        if elsewhere:
-            print(f"\n{elsewhere} further violation(s) elsewhere in the repo.")
+        if remainder and staged:
+            print(
+                f"\n{remainder} further violation(s) in the rest of the repo, "
+                "in files you did not stage."
+            )
+        elif remainder:
+            print(f"\n… and {remainder} more (run `check` for the full list)")
     elif verdict.tightened:
         print(f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta})")
+    elif verdict.dropped:
+        # --no-tighten: the only way to reach a fall that was not recorded.
+        # Silence here is how a baseline drifts above reality forever.
+        print(
+            f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta}) "
+            "— not tightened (--no-tighten); run `baseline update` to record it"
+        )
 
     sys.exit(1 if verdict.regressed else 0)
 
@@ -281,6 +311,23 @@ def _run_rules(args):
             print(f"             {r['message']}")
 
 
+_VIOLATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "rule": {"type": "string", "description": "Rule ID that was violated"},
+        "file": {"type": "string", "description": "Path to the file"},
+        "line": {
+            "type": "integer",
+            "description": "Line number (1-based, 0 if unknown)",
+        },
+        "message": {
+            "type": "string",
+            "description": "Human-readable violation message",
+        },
+    },
+}
+
+
 def _run_schema(_args):
     schema = {
         "check_output": {
@@ -293,31 +340,71 @@ def _run_schema(_args):
                 },
                 "violation_count": {
                     "type": "integer",
-                    "description": "Number of violations",
+                    "description": (
+                        "Number of violations; always equal to the length of "
+                        "'violations' for this command"
+                    ),
+                },
+                "violations": {"type": "array", "items": _VIOLATION_SCHEMA},
+            },
+        },
+        "precommit_ratchet_output": {
+            "description": (
+                "Output of 'precommit' when a baseline is configured "
+                "(ratchet mode). Without one, 'precommit' emits check_output."
+            ),
+            "type": "object",
+            "properties": {
+                "passed": {
+                    "type": "boolean",
+                    "description": (
+                        "True unless the repo-wide total rose above the "
+                        "recorded baseline"
+                    ),
+                },
+                "violation_count": {
+                    "type": "integer",
+                    "description": (
+                        "Violations in the whole repo -- the number the "
+                        "ratchet compares against the baseline. NOT the "
+                        "length of 'violations'."
+                    ),
+                },
+                "reported_violation_count": {
+                    "type": "integer",
+                    "description": (
+                        "Length of 'violations': the staged files' violations "
+                        "when anything is staged, otherwise the whole list "
+                        "capped at 50"
+                    ),
+                },
+                "ratchet": {
+                    "type": "object",
+                    "properties": {
+                        "baseline": {
+                            "type": "integer",
+                            "description": "The total recorded in the baseline file",
+                        },
+                        "total": {
+                            "type": "integer",
+                            "description": "The repo-wide total this run measured",
+                        },
+                        "tightened": {
+                            "type": "boolean",
+                            "description": (
+                                "True when the total fell and the baseline "
+                                "file was rewritten and staged"
+                            ),
+                        },
+                    },
                 },
                 "violations": {
                     "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "rule": {
-                                "type": "string",
-                                "description": "Rule ID that was violated",
-                            },
-                            "file": {
-                                "type": "string",
-                                "description": "Path to the file",
-                            },
-                            "line": {
-                                "type": "integer",
-                                "description": "Line number (1-based, 0 if unknown)",
-                            },
-                            "message": {
-                                "type": "string",
-                                "description": "Human-readable violation message",
-                            },
-                        },
-                    },
+                    "description": (
+                        "The reported subset, not the whole repo; "
+                        "'violation_count' is the whole repo"
+                    ),
+                    "items": _VIOLATION_SCHEMA,
                 },
             },
         },
@@ -405,6 +492,14 @@ def main():
             metavar="PATH",
             help="Path to the config JSON file (required; no search, no default)",
         )
+        return p
+
+    def add_baseline_flag(p):
+        """Only for the commands a baseline means something to.
+
+        On `check` it would be accepted and silently ignored, which reads as
+        support for a ratchet mode `check` does not have.
+        """
         p.add_argument(
             "--baseline",
             default=None,
@@ -421,10 +516,12 @@ def main():
     check.add_argument("files", nargs="+", help="Python files to check")
 
     # --- precommit ---
-    precommit = add_rule_flags(
-        sub.add_parser(
-            "precommit",
-            help="Lint the staged content of every staged Python file",
+    precommit = add_baseline_flag(
+        add_rule_flags(
+            sub.add_parser(
+                "precommit",
+                help="Lint the staged content of every staged Python file",
+            )
         )
     )
     precommit.add_argument(
@@ -449,11 +546,19 @@ def main():
         "baseline", help="Record or inspect the ratchet's violation total"
     )
     baseline_sub = baseline_cmd.add_subparsers(dest="baseline_command", required=True)
-    add_rule_flags(
-        baseline_sub.add_parser("update", help="Lint the index and record the total")
+    add_baseline_flag(
+        add_rule_flags(
+            baseline_sub.add_parser(
+                "update", help="Lint the index and record the total"
+            )
+        )
     )
-    add_rule_flags(
-        baseline_sub.add_parser("show", help="Print the recorded and current totals")
+    add_baseline_flag(
+        add_rule_flags(
+            baseline_sub.add_parser(
+                "show", help="Print the recorded and current totals"
+            )
+        )
     )
 
     # --- schema ---
