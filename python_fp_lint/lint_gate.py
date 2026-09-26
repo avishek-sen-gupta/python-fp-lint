@@ -24,6 +24,16 @@ _DEFAULT_MAX_COMPLEXITY = 3
 # Deliberately stricter than Ruff's own default of 50.
 _DEFAULT_MAX_STATEMENTS = 10
 
+# Paths per subprocess invocation. A whole-repo scan on a large codebase
+# otherwise exceeds ARG_MAX; chunking also bounds each call's work, which is
+# what keeps the 30s timeout realistic.
+_MAX_PATHS_PER_CALL = 1000
+
+
+def _chunked(items: list[str], size: int = _MAX_PATHS_PER_CALL) -> list[list[str]]:
+    """Split a path list into subprocess-sized batches. Never yields an empty batch."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
 
 class LintGate:
     """Unified lint gate — runs ast-grep, Ruff, and beniget reassignment detection."""
@@ -426,7 +436,7 @@ def _read_config(key: str, config_path: str | None = None):
         raise ConfigError(f"cannot read config file {config_path}: {exc}") from exc
 
 
-def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolation]:
+def _run_sg_once(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolation]:
     try:
         result = subprocess.run(
             [
@@ -496,7 +506,7 @@ def _validate_max_complexity(value) -> int:
     return _validate_ceiling("max_complexity", value)
 
 
-def _run_ruff(
+def _run_ruff_once(
     ruff_path: str,
     files: list[str],
     select: str,
@@ -550,4 +560,31 @@ def _run_ruff(
             message=entry.get("message", ""),
         )
         for entry in entries
+    ]
+
+
+def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolation]:
+    # The chunk size is passed explicitly rather than left to the default, so
+    # it is read at call time -- a default argument binds once at def time and
+    # could not be monkeypatched by a test.
+    return [
+        violation
+        for chunk in _chunked(files, _MAX_PATHS_PER_CALL)
+        for violation in _run_sg_once(sg_path, rules_dir, chunk)
+    ]
+
+
+def _run_ruff(
+    ruff_path: str,
+    files: list[str],
+    select: str,
+    max_complexity: int,
+    max_statements: int = _DEFAULT_MAX_STATEMENTS,
+) -> list[LintViolation]:
+    return [
+        violation
+        for chunk in _chunked(files, _MAX_PATHS_PER_CALL)
+        for violation in _run_ruff_once(
+            ruff_path, chunk, select, max_complexity, max_statements
+        )
     ]
