@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from python_fp_lint import lint_gate, ratchet
+from python_fp_lint import baseline, lint_gate, ratchet
 from python_fp_lint.lint_gate import LintGate
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -134,3 +134,79 @@ class TestChunkedRepo:
 
         monkeypatch.setattr(lint_gate, "_MAX_PATHS_PER_CALL", 2)
         assert _total(repo) == whole == 10
+
+
+class TestVerdict:
+    def _baseline(self, repo, total):
+        path = repo / "fp-baseline.json"
+        baseline.write(str(path), total)
+        _git(repo, "add", "fp-baseline.json")
+        _git(repo, "commit", "-qm", "baseline")
+        return str(path)
+
+    def test_rise_does_not_tighten(self, repo):
+        path = self._baseline(repo, 10)
+        verdict = ratchet.apply(str(repo), path, total=13)
+        assert (verdict.recorded, verdict.total, verdict.delta) == (10, 13, 3)
+        assert verdict.tightened is False
+        assert baseline.read(path) == 10
+
+    def test_equal_does_not_tighten(self, repo):
+        path = self._baseline(repo, 10)
+        verdict = ratchet.apply(str(repo), path, total=10)
+        assert verdict.tightened is False
+        assert baseline.read(path) == 10
+
+    def test_fall_rewrites_the_file(self, repo):
+        path = self._baseline(repo, 10)
+        verdict = ratchet.apply(str(repo), path, total=7)
+        assert (verdict.recorded, verdict.total, verdict.delta) == (10, 7, -3)
+        assert verdict.tightened is True
+        assert baseline.read(path) == 7
+
+    def test_fall_stages_the_file(self, repo):
+        path = self._baseline(repo, 10)
+        ratchet.apply(str(repo), path, total=7)
+        staged = _git(repo, "diff", "--cached", "--name-only")
+        assert "fp-baseline.json" in staged
+
+    def test_no_tighten_leaves_the_file_alone(self, repo):
+        path = self._baseline(repo, 10)
+        verdict = ratchet.apply(str(repo), path, total=7, tighten=False)
+        assert verdict.tightened is False
+        assert baseline.read(path) == 10
+        assert _git(repo, "diff", "--cached", "--name-only") == ""
+
+    def test_missing_baseline_raises(self, repo):
+        with pytest.raises(baseline.BaselineError):
+            ratchet.apply(str(repo), str(repo / "absent.json"), total=7)
+
+
+class TestStagingFailure:
+    """Review Focus 3: a failed `git add` must not leave a lowered file behind.
+
+    The file on disk would record a total the commit does not contain, and the
+    next run would compare against a number nothing in the repo justifies.
+    """
+
+    def test_gitignored_baseline_restores_the_previous_total(self, repo):
+        path = repo / "fp-baseline.json"
+        baseline.write(str(path), 10)
+        (repo / ".gitignore").write_text("fp-baseline.json\n")
+        _git(repo, "add", ".gitignore")
+        _git(repo, "commit", "-qm", "ignore the baseline")
+
+        with pytest.raises(ratchet.RatchetError, match="git add"):
+            ratchet.apply(str(repo), str(path), total=7)
+        assert baseline.read(str(path)) == 10
+
+    def test_no_tighten_does_not_touch_git_at_all(self, repo):
+        path = repo / "fp-baseline.json"
+        baseline.write(str(path), 10)
+        (repo / ".gitignore").write_text("fp-baseline.json\n")
+        _git(repo, "add", ".gitignore")
+        _git(repo, "commit", "-qm", "ignore the baseline")
+
+        verdict = ratchet.apply(str(repo), str(path), total=7, tighten=False)
+        assert verdict.tightened is False
+        assert baseline.read(str(path)) == 10
