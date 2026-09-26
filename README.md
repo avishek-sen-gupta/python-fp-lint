@@ -165,6 +165,10 @@ gate = LintGate(
 
 Omitting a key (or passing `None`) uses all available rules for that backend.
 
+| Key | Meaning |
+|---|---|
+| `"baseline"` | path to the ratchet baseline file; unset disables the ratchet — see [Violation ratchet](#violation-ratchet) |
+
 ### Cyclomatic complexity
 
 `max_complexity` caps the cyclomatic complexity of any single function. A function
@@ -509,6 +513,72 @@ chmod +x .git/hooks/pre-commit
 
 For contributors to python-fp-lint itself, the local hook runs Talisman (secret detection), Black
 (auto-format and re-stage), and the full pytest suite — all via `uv run`.
+
+## Violation ratchet
+
+The pre-commit gate blocks on *every* violation in a staged file, which a codebase with
+existing violations can never satisfy. The ratchet is the alternative: record the number of
+violations the repo has today, then block any commit that raises it.
+
+Set a baseline path in the config file and the gate switches to ratchet mode:
+
+```json
+{ "baseline": "fp-baseline.json" }
+```
+
+A relative path resolves against the config file, so the two can be checked in side by side.
+`--baseline PATH` overrides it. With no baseline configured, `precommit` behaves exactly as
+before.
+
+```bash
+# Record today's number -- run this once, at adoption
+python-fp-lint baseline update --config fp.json
+
+# What is recorded, and where are we now
+python-fp-lint baseline show --config fp.json
+
+# The gate
+python-fp-lint precommit --config fp.json
+```
+
+The file holds one number:
+
+```json
+{ "total": 4312 }
+```
+
+| Total vs baseline | Result |
+|---|---|
+| higher | **Commit blocked** (exit 1). Prints the violations in the files you staged, plus a count of the rest. |
+| equal | Passes. |
+| lower | Passes, rewrites the file to the new total and `git add`s it, so the improvement lands in this commit and cannot be given back. |
+
+`--no-tighten` suppresses the rewrite and the staging. That is what CI uses: in a fresh
+checkout the index is HEAD and nothing is staged, so `precommit --no-tighten` lints the whole
+tree and compares. No separate CI command is needed.
+
+```yaml
+- run: python-fp-lint precommit --config fp.json --no-tighten
+```
+
+### What the total counts
+
+Every violation from all three backends, flat and unweighted — ast-grep, Ruff and beniget.
+The tree that gets counted is the **index**: tracked files, with unstaged edits read from
+`git show :path`. Untracked files are not counted, because they are not part of the commit.
+
+Two things the number is sensitive to:
+
+- **`C901` and `PLR0915` are ceiling rules**, so the total moves when `max_complexity` or
+  `max_statements` change, not only when code changes. Editing a rule file or changing
+  `ruff_select` / `ast_grep_rules` does the same. The baseline records no fingerprint of the
+  ruleset, so **re-run `baseline update` deliberately after any such change** — otherwise the
+  ratchet banks a windfall from a raised ceiling, or blocks every commit over a new rule.
+- **Deleting a file lowers the total.** A total-based ratchet cannot tell debt paid off from
+  debt deleted. This is a known and accepted property.
+
+Ratchet mode always enforces `--strict`: a missing `ast-grep` or `ruff` contributes zero
+violations, which would read as an improvement and tighten the baseline toward zero.
 
 ## Architecture
 

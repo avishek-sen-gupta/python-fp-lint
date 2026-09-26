@@ -318,3 +318,150 @@ class TestBaselineRefusesToGuess:
             _run_baseline_update(self._Args(CONFIG, str(path)))
         assert exc.value.code == 2
         assert not path.exists()
+
+
+class TestPrecommitRatchet:
+    DIRTY = 'd = {}\nd["k"] = 1\n'  # one violation
+    DIRTIER = 'd = {}\nd["k"] = 1\nd.update({"j": 2})\n'  # two
+
+    def _repo(self, tmp_path, committed, baseline_total):
+        def git(*args):
+            subprocess.run(
+                ["git", *args], cwd=tmp_path, check=True, capture_output=True
+            )
+
+        git("init", "-q", "--template=")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "Test")
+        (tmp_path / "mod.py").write_text(committed)
+        # `baseline` comes last: config.example.json carries "baseline": null,
+        # and spreading it after would put the key back to null.
+        (tmp_path / "fp.json").write_text(
+            json.dumps({**json.load(open(CONFIG)), "baseline": "fp-baseline.json"})
+        )
+        (tmp_path / "fp-baseline.json").write_text(
+            json.dumps({"total": baseline_total}) + "\n"
+        )
+        git("add", "mod.py", "fp.json", "fp-baseline.json")
+        git("commit", "-qm", "init")
+        return tmp_path
+
+    def _run(self, repo, *args):
+        return subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "python_fp_lint",
+                "--format",
+                "json",
+                "precommit",
+                "--config",
+                str(repo / "fp.json"),
+                *args,
+            ],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        )
+
+    def _git_out(self, repo, *args):
+        return subprocess.run(
+            ["git", *args], cwd=repo, capture_output=True, text=True, check=True
+        ).stdout
+
+    def test_equal_total_passes(self, tmp_path):
+        repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
+        result = self._run(repo)
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    def test_rise_fails_and_leaves_the_baseline_alone(self, tmp_path):
+        repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
+        (repo / "mod.py").write_text(self.DIRTIER)
+        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True)
+        result = self._run(repo)
+        assert result.returncode == 1
+        assert json.loads(result.stdout)["ratchet"] == {
+            "baseline": 1,
+            "total": 2,
+            "tightened": False,
+        }
+        assert json.loads((repo / "fp-baseline.json").read_text()) == {"total": 1}
+
+    def test_fall_tightens_and_stages(self, tmp_path):
+        repo = self._repo(tmp_path, self.DIRTIER, baseline_total=2)
+        (repo / "mod.py").write_text(self.DIRTY)
+        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True)
+        result = self._run(repo)
+        assert result.returncode == 0
+        assert json.loads((repo / "fp-baseline.json").read_text()) == {"total": 1}
+        assert "fp-baseline.json" in self._git_out(
+            repo, "diff", "--cached", "--name-only"
+        )
+
+    def test_no_tighten_passes_without_writing(self, tmp_path):
+        repo = self._repo(tmp_path, self.DIRTIER, baseline_total=2)
+        (repo / "mod.py").write_text(self.DIRTY)
+        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True)
+        result = self._run(repo, "--no-tighten")
+        assert result.returncode == 0
+        assert json.loads((repo / "fp-baseline.json").read_text()) == {"total": 2}
+
+    def test_pre_existing_violations_do_not_block(self, tmp_path):
+        """The whole point: a dirty legacy file can still be committed."""
+        repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
+        (repo / "mod.py").write_text(self.DIRTY + "# a comment\n")
+        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True)
+        assert self._run(repo).returncode == 0
+
+    def test_text_output_names_only_staged_violations(self, tmp_path):
+        repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
+        (repo / "other.py").write_text(self.DIRTIER)
+        subprocess.run(["git", "add", "other.py"], cwd=repo, check=True)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "python_fp_lint",
+                "precommit",
+                "--config",
+                str(repo / "fp.json"),
+            ],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        )
+        assert result.returncode == 1
+        assert "other.py" in result.stdout
+        assert "mod.py" not in result.stdout
+        assert "1 further violation" in result.stdout
+
+
+class TestPrecommitWithoutBaselineIsUnchanged:
+    def test_any_violation_in_a_staged_file_still_blocks(self, tmp_path):
+        def git(*args):
+            subprocess.run(
+                ["git", *args], cwd=tmp_path, check=True, capture_output=True
+            )
+
+        git("init", "-q", "--template=")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "Test")
+        (tmp_path / "mod.py").write_text('d = {}\nd["k"] = 1\n')
+        git("add", "mod.py")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "python_fp_lint",
+                "precommit",
+                "--config",
+                CONFIG,
+            ],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        )
+        assert result.returncode == 1

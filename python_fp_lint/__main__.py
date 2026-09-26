@@ -19,7 +19,7 @@ from python_fp_lint.lint_gate import (
     LintGate,
     missing_backends,
 )
-from python_fp_lint.precommit import evaluate_staged
+from python_fp_lint.precommit import evaluate_staged, staged_python_files
 from python_fp_lint.rules_meta import list_rules
 
 
@@ -177,19 +177,91 @@ def _git_repo_root() -> str:
     return result.stdout.strip()
 
 
+def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
+    """Print a ratchet verdict and exit 0 (clean or tightened) or 1 (regression).
+
+    On a regression only the staged files' violations are listed. The raw list
+    runs to thousands of lines on the codebases this feature exists for, and
+    the regression is almost always in what was just touched; `check` still
+    prints everything.
+    """
+    if fmt == "json":
+        payload = {
+            "passed": not verdict.regressed,
+            "violation_count": len(violations),
+            "ratchet": {
+                "baseline": verdict.recorded,
+                "total": verdict.total,
+                "tightened": verdict.tightened,
+            },
+            "violations": [
+                {"rule": v.rule, "file": v.file, "line": v.line, "message": v.message}
+                for v in violations
+                if v.file in staged
+            ],
+        }
+        json.dump(payload, sys.stdout, indent=2)
+        print()
+    elif verdict.regressed:
+        print(f"ratchet: {verdict.recorded} → {verdict.total} (+{verdict.delta})")
+        local = [v for v in violations if v.file in staged]
+        for v in local:
+            loc = f"{v.file}:{v.line}" if v.line else v.file
+            print(f"  [{v.rule}] {loc} — {v.message}")
+        elsewhere = len(violations) - len(local)
+        if elsewhere:
+            print(f"\n{elsewhere} further violation(s) elsewhere in the repo.")
+    elif verdict.tightened:
+        print(f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta})")
+
+    sys.exit(1 if verdict.regressed else 0)
+
+
 def _run_precommit(args):
-    _enforce_strict(args)
     repo_root = _git_repo_root()
+    gate = _build_gate(args)
+    baseline_path = gate.resolve_baseline()
+    if baseline_path is None:
+        _run_precommit_staged(args, gate, repo_root)
+    else:
+        _run_precommit_ratchet(args, gate, repo_root, baseline_path)
+
+
+def _run_precommit_staged(args, gate: LintGate, repo_root: str) -> None:
+    """The original gate: every violation in a staged file blocks the commit."""
+    _enforce_strict(args)
     # Materialize staged blobs outside the repo: ast-grep and Ruff both honour
     # the enclosing tree's ignore rules, and a temp dir inside it may be skipped.
     with tempfile.TemporaryDirectory(prefix="python-fp-lint-staged-") as workdir:
         result = evaluate_staged(
             repo_root=repo_root,
             workdir=workdir,
-            gate=_build_gate(args),
+            gate=gate,
             paths=args.files or None,
         )
     _report(result, args.format)
+
+
+def _run_precommit_ratchet(
+    args, gate: LintGate, repo_root: str, baseline_path: str
+) -> None:
+    """The ratchet: the whole-repo total may fall and may not rise.
+
+    This replaces the staged check rather than adding to it. Leaving the
+    staged check on would make a dirty legacy repo uncommittable, which is
+    the situation the ratchet exists to escape.
+    """
+    _require_backends()
+    result = ratchet.total_violations(repo_root, gate)
+    verdict = ratchet.apply(
+        repo_root,
+        baseline_path,
+        total=len(result.violations),
+        tighten=not args.no_tighten,
+    )
+    _report_ratchet(
+        verdict, result.violations, set(staged_python_files(repo_root)), args.format
+    )
 
 
 def _run_rules(args):
@@ -355,6 +427,14 @@ def main():
         "files",
         nargs="*",
         help="Optional subset of staged files (pre-commit passes these)",
+    )
+    precommit.add_argument(
+        "--no-tighten",
+        action="store_true",
+        help=(
+            "Never rewrite or stage the baseline; a fallen total passes with a "
+            "warning. Use this in CI, where nothing is staged."
+        ),
     )
 
     # --- rules ---
