@@ -1,12 +1,25 @@
 # tests/test_backends.py
 """Backend discovery and --strict enforcement."""
 
+import json
 import os
+import subprocess
+from dataclasses import dataclass, field
 
 import pytest
 
 from python_fp_lint import lint_gate
 from python_fp_lint.__main__ import _enforce_strict
+
+
+@dataclass
+class _Completed:
+    """Stand-in for subprocess.CompletedProcess."""
+
+    stdout: str = ""
+    stderr: str = ""
+    returncode: int = 0
+    args: list = field(default_factory=list)
 
 
 class _Args:
@@ -122,3 +135,75 @@ class TestPreCommitHooksManifest:
             )
         assert hook["entry"].startswith("python-fp-lint check")
         assert hook["stages"] == ["manual"]
+
+
+class TestBackendFailuresRaise:
+    """A backend that did not run must not report zero violations.
+
+    Under the ratchet, zero reads as an improvement and tightens the baseline
+    to 0, destroying the debt record.
+    """
+
+    def test_ruff_timeout_raises(self, monkeypatch):
+        def timeout(*_args, **_kwargs):
+            raise subprocess.TimeoutExpired(cmd="ruff", timeout=30)
+
+        monkeypatch.setattr(lint_gate.subprocess, "run", timeout)
+        with pytest.raises(lint_gate.BackendError, match="timed out"):
+            lint_gate._run_ruff("/usr/bin/ruff", ["a.py"], "F", 3)
+
+    def test_ruff_oserror_raises(self, monkeypatch):
+        def boom(*_args, **_kwargs):
+            raise OSError(7, "Argument list too long")
+
+        monkeypatch.setattr(lint_gate.subprocess, "run", boom)
+        with pytest.raises(lint_gate.BackendError, match="ruff"):
+            lint_gate._run_ruff("/usr/bin/ruff", ["a.py"], "F", 3)
+
+    def test_ruff_unparseable_output_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            lint_gate.subprocess,
+            "run",
+            lambda *_a, **_k: _Completed(stdout="not json at all"),
+        )
+        with pytest.raises(lint_gate.BackendError, match="unparseable"):
+            lint_gate._run_ruff("/usr/bin/ruff", ["a.py"], "F", 3)
+
+    def test_ruff_empty_output_is_still_zero_violations(self, monkeypatch):
+        monkeypatch.setattr(
+            lint_gate.subprocess, "run", lambda *_a, **_k: _Completed(stdout="")
+        )
+        assert lint_gate._run_ruff("/usr/bin/ruff", ["a.py"], "F", 3) == []
+
+    def test_sg_timeout_raises(self, monkeypatch):
+        def timeout(*_args, **_kwargs):
+            raise subprocess.TimeoutExpired(cmd="sg", timeout=30)
+
+        monkeypatch.setattr(lint_gate.subprocess, "run", timeout)
+        with pytest.raises(lint_gate.BackendError, match="timed out"):
+            lint_gate._run_sg("/usr/bin/sg", "/rules", ["a.py"])
+
+    def test_sg_ndjson_fallback_still_works(self, monkeypatch):
+        line = json.dumps(
+            {
+                "ruleId": "no-list-append",
+                "file": "a.py",
+                "range": {"start": {"line": 4}},
+                "message": "m",
+            }
+        )
+        monkeypatch.setattr(
+            lint_gate.subprocess, "run", lambda *_a, **_k: _Completed(stdout=line)
+        )
+        [violation] = lint_gate._run_sg("/usr/bin/sg", "/rules", ["a.py"])
+        assert violation.rule == "no-list-append"
+        assert violation.line == 5
+
+    def test_sg_garbage_output_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            lint_gate.subprocess,
+            "run",
+            lambda *_a, **_k: _Completed(stdout="{ not json\nalso not json"),
+        )
+        with pytest.raises(lint_gate.BackendError, match="unparseable"):
+            lint_gate._run_sg("/usr/bin/sg", "/rules", ["a.py"])

@@ -397,6 +397,16 @@ class ConfigError(Exception):
     """An explicitly-specified config file is missing or unreadable."""
 
 
+class BackendError(Exception):
+    """A lint backend could not be run, so its findings are unknown.
+
+    Deliberately not an empty result: "the linter did not run" and "the code
+    is clean" must stay distinguishable. The ratchet treats zero violations
+    as an improvement and tightens the baseline, so a silent failure would
+    write a baseline of zero and destroy the recorded debt.
+    """
+
+
 def _read_config(key: str, config_path: str | None = None):
     """Read one key from an explicitly named config file.
 
@@ -432,33 +442,47 @@ def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolatio
             timeout=30,
             cwd=rules_dir,
         )
-    except (subprocess.TimeoutExpired, OSError):
-        return []
+    except subprocess.TimeoutExpired as exc:
+        raise BackendError(
+            f"ast-grep timed out after 30s on {len(files)} file(s)"
+        ) from exc
+    except OSError as exc:
+        raise BackendError(f"ast-grep could not be run: {exc}") from exc
 
     if not result.stdout.strip():
         return []
+    return [_sg_violation(entry) for entry in _sg_entries(result.stdout)]
 
+
+def _sg_entries(stdout: str) -> list[dict]:
+    """ast-grep emits a JSON array, or NDJSON when streaming."""
     try:
-        entries = json.loads(result.stdout)
+        parsed = json.loads(stdout)
+        # If a single JSON object (dict) was parsed instead of an array,
+        # wrap it in a list to maintain consistent return type.
+        if isinstance(parsed, dict):
+            return [parsed]
+        return parsed
     except json.JSONDecodeError:
-        entries = []
-        for line in result.stdout.strip().splitlines():
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+        pass
+    entries = []
+    for line in stdout.strip().splitlines():
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError as exc:
+            raise BackendError(
+                f"ast-grep produced unparseable output: {line[:80]!r}"
+            ) from exc
+    return entries
 
-    violations = []
-    for entry in entries:
-        violations.append(
-            LintViolation(
-                rule=entry.get("ruleId", "unknown"),
-                file=entry.get("file", ""),
-                line=entry.get("range", {}).get("start", {}).get("line", 0) + 1,
-                message=entry.get("message", ""),
-            )
-        )
-    return violations
+
+def _sg_violation(entry: dict) -> LintViolation:
+    return LintViolation(
+        rule=entry.get("ruleId", "unknown"),
+        file=entry.get("file", ""),
+        line=entry.get("range", {}).get("start", {}).get("line", 0) + 1,
+        message=entry.get("message", ""),
+    )
 
 
 def _validate_ceiling(name: str, value) -> int:
@@ -503,25 +527,27 @@ def _run_ruff(
             text=True,
             timeout=30,
         )
-    except (subprocess.TimeoutExpired, OSError):
-        return []
+    except subprocess.TimeoutExpired as exc:
+        raise BackendError(f"ruff timed out after 30s on {len(files)} file(s)") from exc
+    except OSError as exc:
+        raise BackendError(f"ruff could not be run: {exc}") from exc
 
     if not result.stdout.strip():
         return []
 
     try:
         entries = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return []
+    except json.JSONDecodeError as exc:
+        raise BackendError(
+            f"ruff produced unparseable output: {result.stdout[:80]!r}"
+        ) from exc
 
-    violations = []
-    for entry in entries:
-        violations.append(
-            LintViolation(
-                rule=entry.get("code", "unknown"),
-                file=entry.get("filename", ""),
-                line=entry.get("location", {}).get("row", 0),
-                message=entry.get("message", ""),
-            )
+    return [
+        LintViolation(
+            rule=entry.get("code", "unknown"),
+            file=entry.get("filename", ""),
+            line=entry.get("location", {}).get("row", 0),
+            message=entry.get("message", ""),
         )
-    return violations
+        for entry in entries
+    ]
