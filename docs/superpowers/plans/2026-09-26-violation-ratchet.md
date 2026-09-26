@@ -704,7 +704,7 @@ Add `"baseline": null,` as the second key, directly after `"lint_rules_dir": nul
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_baseline.py -v`
-Expected: PASS (24 tests).
+Expected: PASS (19 tests).
 
 - [ ] **Step 7: Run the whole suite**
 
