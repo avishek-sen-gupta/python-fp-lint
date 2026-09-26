@@ -11,8 +11,12 @@ import os
 import tempfile
 
 from python_fp_lint.lint_gate import LintGate
-from python_fp_lint.precommit import git_output, materialize_staged
-from python_fp_lint.result import LintResult, LintViolation
+from python_fp_lint.precommit import (
+    git_output,
+    materialize_staged,
+    remap_to_repo_relative,
+)
+from python_fp_lint.result import LintResult
 
 
 def index_python_files(repo_root: str) -> list[str]:
@@ -57,18 +61,7 @@ def evaluate_index(repo_root: str, workdir: str, gate: LintGate) -> LintResult:
     )
 
     result = gate.evaluate(sorted(mapping), repo_root)
-
-    # Report repo-relative paths rather than the temp ones we scanned.
-    violations = [
-        LintViolation(
-            rule=v.rule,
-            file=mapping.get(os.path.abspath(v.file), v.file),
-            line=v.line,
-            message=v.message,
-        )
-        for v in result.violations
-    ]
-    return LintResult(passed=len(violations) == 0, violations=violations)
+    return remap_to_repo_relative(result, mapping)
 
 
 def total_violations(repo_root: str, gate: LintGate) -> LintResult:

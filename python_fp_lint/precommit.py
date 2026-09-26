@@ -54,6 +54,25 @@ def materialize_staged(repo_root: str, paths: list[str], dest: str) -> dict[str,
     return {write_blob(path): path for path in paths}
 
 
+def remap_to_repo_relative(result: LintResult, mapping: dict[str, str]) -> LintResult:
+    """Re-label violations with repo-relative paths rather than scanned ones.
+
+    `mapping` is materialized-absolute-path -> repo-relative path, as
+    `materialize_staged` returns it. Violations are reported at the
+    repo-relative path rather than the temp one that was actually scanned.
+    """
+    violations = [
+        LintViolation(
+            rule=v.rule,
+            file=mapping.get(os.path.abspath(v.file), v.file),
+            line=v.line,
+            message=v.message,
+        )
+        for v in result.violations
+    ]
+    return LintResult(passed=len(violations) == 0, violations=violations)
+
+
 def _narrow_to_requested(
     staged: list[str], paths: list[str] | None, repo_root: str
 ) -> list[str]:
@@ -88,15 +107,4 @@ def evaluate_staged(
 
     mapping = materialize_staged(repo_root, staged, workdir)
     result = gate.evaluate(sorted(mapping), repo_root)
-
-    # Report repo-relative paths rather than the temp ones we scanned.
-    violations = [
-        LintViolation(
-            rule=v.rule,
-            file=mapping.get(os.path.abspath(v.file), v.file),
-            line=v.line,
-            message=v.message,
-        )
-        for v in result.violations
-    ]
-    return LintResult(passed=len(violations) == 0, violations=violations)
+    return remap_to_repo_relative(result, mapping)
