@@ -59,7 +59,15 @@ def read(path: str) -> int:
 
 
 def write(path: str, total: int) -> None:
-    """Record a new total, replacing whatever was there."""
-    with open(path, "w") as f:
-        json.dump({"total": total}, f)
-        f.write("\n")
+    """Record a new total, replacing whatever was there.
+
+    A path that cannot be written -- a directory that does not exist, a
+    read-only file -- is a BaselineError like every other baseline failure, so
+    it exits 2 with one line rather than a raw OSError traceback.
+    """
+    try:
+        with open(path, "w") as f:
+            json.dump({"total": total}, f)
+            f.write("\n")
+    except OSError as exc:
+        raise BaselineError(f"cannot write baseline file {path}: {exc}") from exc

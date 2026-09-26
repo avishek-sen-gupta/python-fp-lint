@@ -25,6 +25,12 @@ class TestReadWrite:
         baseline.write(path, 0)
         assert baseline.read(path) == 0
 
+    def test_write_into_a_missing_directory_is_a_baseline_error(self, tmp_path):
+        """M1: it raised a raw FileNotFoundError, so the CLI never caught it."""
+        path = str(tmp_path / "absent" / "b.json")
+        with pytest.raises(baseline.BaselineError, match="cannot write baseline file"):
+            baseline.write(path, 7)
+
 
 class TestReadRejectsBadFiles:
     """Review Focus 1 and 2: a bad baseline must never parse as zero."""
