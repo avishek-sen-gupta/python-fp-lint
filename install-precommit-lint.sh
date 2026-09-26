@@ -6,6 +6,7 @@
 set -e
 
 PLUGIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$PLUGIN_DIR/installer/common.sh"
 PROJECT_DIR="$PWD"
 CONFIG_YAML="$PROJECT_DIR/.pre-commit-config.yaml"
 REPO_URL="https://github.com/avishek-sen-gupta/python-fp-lint"
@@ -14,15 +15,8 @@ RULES_DIR=".python-fp-lint"
 REV="main"
 
 # --- validate ---
-if ! command -v python3 > /dev/null 2>&1; then
-  echo "Error: python3 is required but not found." >&2
-  exit 1
-fi
-
-if [ ! -d "$PROJECT_DIR/.git" ]; then
-  echo "Error: $PROJECT_DIR is not a git repository root." >&2
-  exit 1
-fi
+require_python3
+require_git_root "$PROJECT_DIR"
 
 # --- copy the ast-grep rules into the repo ---
 # They live here rather than inside the installed package because ast-grep
@@ -57,36 +51,18 @@ with open(path, "w", encoding="utf-8") as f:
 PY
 
 # --- wire .pre-commit-config.yaml (idempotent) ---
-# The edit is textual rather than a YAML round-trip, which would drop the
-# consumer's comments and reorder their keys. installer/precommit_yaml.py
-# holds that logic; the Pyright installer wires its own hook the same way.
+# Textual, not a YAML round-trip, so the consumer's comments and key
+# order survive -- see installer/precommit_yaml.py.
 echo "Wiring python-fp-lint into .pre-commit-config.yaml..."
-python3 "$PLUGIN_DIR/installer/precommit_yaml.py" insert \
-  --config "$CONFIG_YAML" \
-  --url "$REPO_URL" \
-  --rev "$REV" \
-  --hooks "[{\"id\": \"python-fp-lint\", \"args\": [\"--config\", \"$LINT_CONFIG\"]},
+wire_hooks "$CONFIG_YAML" "$REPO_URL" "$REV" "[{\"id\": \"python-fp-lint\", \"args\": [\"--config\", \"$LINT_CONFIG\"]},
             {\"id\": \"python-fp-lint-check\", \"args\": [\"--config\", \"$LINT_CONFIG\"]}]"
 
 # --- activate, tracking main ---
 # pre-commit never re-fetches a branch name: `rev: main` is cloned once and
 # frozen. Tracking main means rewriting rev to main's current SHA, which is
 # what --bleeding-edge does; each re-run of this script moves it forward.
-UPDATE_CMD="pre-commit autoupdate --bleeding-edge --repo $REPO_URL"
-if command -v pre-commit > /dev/null 2>&1; then
-  echo "Pinning rev to the tip of main..."
-  if ! $UPDATE_CMD; then
-    echo "Warning: could not update rev (offline?); it stays '$REV' for now."
-    echo "Re-run this script, or: $UPDATE_CMD"
-  fi
-  echo "Running pre-commit install..."
-  pre-commit install
-else
-  echo ""
-  echo "Note: pre-commit is not on PATH. Install it, then run:"
-  echo "  $UPDATE_CMD"
-  echo "  pre-commit install"
-fi
+UPDATE_CMD="$(autoupdate_cmd "$REPO_URL" --bleeding-edge)"
+activate_pre_commit "$UPDATE_CMD" "$REV" "the tip of main"
 
 echo ""
 echo "Done. python-fp-lint wired for $PROJECT_DIR."

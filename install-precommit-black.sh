@@ -16,6 +16,7 @@
 set -e
 
 PLUGIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$PLUGIN_DIR/installer/common.sh"
 PROJECT_DIR="$PWD"
 CONFIG_YAML="$PROJECT_DIR/.pre-commit-config.yaml"
 REPO_URL="https://github.com/psf/black"
@@ -24,45 +25,20 @@ REPO_URL="https://github.com/psf/black"
 REV="26.5.1"
 
 # --- validate ---
-if ! command -v python3 > /dev/null 2>&1; then
-  echo "Error: python3 is required but not found." >&2
-  exit 1
-fi
-
-if [ ! -d "$PROJECT_DIR/.git" ]; then
-  echo "Error: $PROJECT_DIR is not a git repository root." >&2
-  exit 1
-fi
+require_python3
+require_git_root "$PROJECT_DIR"
 
 # --- wire .pre-commit-config.yaml (idempotent) ---
-# The edit is textual rather than a YAML round-trip, which would drop the
-# consumer's comments and reorder their keys. installer/precommit_yaml.py
-# holds that logic, shared with the lint and Pyright installers.
+# Textual, not a YAML round-trip, so the consumer's comments and key
+# order survive -- see installer/precommit_yaml.py.
 echo "Wiring Black into .pre-commit-config.yaml..."
-python3 "$PLUGIN_DIR/installer/precommit_yaml.py" insert \
-  --config "$CONFIG_YAML" \
-  --url "$REPO_URL" \
-  --rev "$REV" \
-  --hooks '[{"id": "black"}]'
+wire_hooks "$CONFIG_YAML" "$REPO_URL" "$REV" '[{"id": "black"}]'
 
 # --- activate, on the latest release ---
 # No --bleeding-edge here, unlike the lint installer: that one tracks this
 # project's `main` branch, while Black ships release tags.
-UPDATE_CMD="pre-commit autoupdate --repo $REPO_URL"
-if command -v pre-commit > /dev/null 2>&1; then
-  echo "Pinning rev to the latest release..."
-  if ! $UPDATE_CMD; then
-    echo "Warning: could not update rev (offline?); it stays '$REV' for now."
-    echo "Re-run this script, or: $UPDATE_CMD"
-  fi
-  echo "Running pre-commit install..."
-  pre-commit install
-else
-  echo ""
-  echo "Note: pre-commit is not on PATH. Install it, then run:"
-  echo "  $UPDATE_CMD"
-  echo "  pre-commit install"
-fi
+UPDATE_CMD="$(autoupdate_cmd "$REPO_URL")"
+activate_pre_commit "$UPDATE_CMD" "$REV" "the latest release"
 
 echo ""
 echo "Done. Black wired for $PROJECT_DIR."

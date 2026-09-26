@@ -13,27 +13,20 @@
 set -e
 
 PLUGIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$PLUGIN_DIR/installer/common.sh"
 PROJECT_DIR="$PWD"
 CONFIG_YAML="$PROJECT_DIR/.pre-commit-config.yaml"
 REPO_URL="https://github.com/psf/black"
 
 # --- validate ---
-if ! command -v python3 > /dev/null 2>&1; then
-  echo "Error: python3 is required but not found." >&2
-  exit 1
-fi
-
-if [ ! -d "$PROJECT_DIR/.git" ]; then
-  echo "Error: $PROJECT_DIR is not a git repository root." >&2
-  exit 1
-fi
+require_python3
+require_git_root "$PROJECT_DIR"
 
 # --- unwire .pre-commit-config.yaml ---
 # Removed textually, mirroring the installer, so the consumer's comments and
 # key order survive.
 echo "Unwiring Black from .pre-commit-config.yaml..."
-python3 "$PLUGIN_DIR/installer/precommit_yaml.py" remove \
-  --config "$CONFIG_YAML" --url "$REPO_URL"
+unwire_hooks "$CONFIG_YAML" "$REPO_URL"
 
 echo ""
 echo "Done. Black unwired from $PROJECT_DIR."

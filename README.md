@@ -779,6 +779,7 @@ commands/
 └── lint.md                # /lint slash command for Claude Code
 
 installer/
+├── common.sh                     # Shared sh scaffolding for the 6 scripts below
 ├── precommit_yaml.py             # Shared .pre-commit-config.yaml insert/remove
 └── pyrightconfig.example.json    # Seeded into a project by the Pyright installer
 
