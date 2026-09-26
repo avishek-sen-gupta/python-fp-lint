@@ -30,62 +30,8 @@ fi
 # Removed textually, mirroring the installer, so the consumer's comments and
 # key order survive.
 echo "Unwiring python-fp-lint from .pre-commit-config.yaml..."
-REPO_URL="$REPO_URL" CONFIG_YAML="$CONFIG_YAML" python3 <<'PY'
-import os
-import re
-import sys
-
-path = os.environ["CONFIG_YAML"]
-url = re.escape(os.environ["REPO_URL"])
-item_re = re.compile(rf"^(\s*)-\s+repo:\s*['\"]?{url}(\.git)?['\"]?\s*(#.*)?$")
-
-try:
-    with open(path, encoding="utf-8") as f:
-        lines = f.readlines()
-except FileNotFoundError:
-    print("  no .pre-commit-config.yaml, skipping.")
-    sys.exit(0)
-
-match = next(
-    ((i, m) for i, m in enumerate(item_re.match(x) for x in lines) if m), None
-)
-if match is None:
-    print("  not wired, skipping.")
-    sys.exit(0)
-
-start, m = match
-indent = len(m.group(1))
-
-
-def in_block(line):
-    return not line.strip() or len(line) - len(line.lstrip()) > indent
-
-
-# The block runs until the first non-blank line at or left of the item's dash.
-# Trailing blank lines go with it, so a separator isn't left doubled up.
-end = next(
-    (i for i in range(start + 1, len(lines)) if not in_block(lines[i])), len(lines)
-)
-out = [*lines[:start], *lines[end:]]
-
-if any(re.match(r"^\s*-\s+repo:", x) for x in out):
-    pass
-elif all(
-    not x.strip() or x.lstrip().startswith("#") or re.match(r"^repos:\s*$", x)
-    for x in out
-):
-    # Nothing left but an empty `repos:` -- the installer created this file.
-    os.remove(path)
-    print(f"  removed {path}")
-    sys.exit(0)
-else:
-    # A bare `repos:` is null, which pre-commit rejects; keep it a list.
-    out = ["repos: []\n" if re.match(r"^repos:\s*$", x) else x for x in out]
-
-with open(path, "w", encoding="utf-8") as f:
-    f.writelines(out)
-print(f"  wrote {path}")
-PY
+python3 "$PLUGIN_DIR/installer/precommit_yaml.py" remove \
+  --config "$CONFIG_YAML" --url "$REPO_URL"
 
 # --- remove the copied ast-grep rules ---
 if [ -d "$PROJECT_DIR/$RULES_DIR" ]; then
