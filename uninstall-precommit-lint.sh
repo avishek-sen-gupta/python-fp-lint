@@ -1,5 +1,5 @@
 #!/bin/sh
-# uninstall-precommit.sh — undo install-precommit.sh.
+# uninstall-precommit-lint.sh — undo install-precommit-lint.sh.
 # Run from the root of the project where the gate was wired.
 # Requires: python3.
 #

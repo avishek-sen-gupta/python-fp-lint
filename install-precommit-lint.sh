@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-precommit.sh — wire python-fp-lint into a project's .pre-commit-config.yaml.
+# install-precommit-lint.sh — wire python-fp-lint into a project's .pre-commit-config.yaml.
 # Run from the root of the project you want to gate.
 # Requires: python3, and `pre-commit` on PATH for the final install step.
 

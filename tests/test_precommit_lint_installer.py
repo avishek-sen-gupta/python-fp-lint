@@ -1,5 +1,5 @@
 # tests/test_precommit_installer.py
-"""Round-trip tests for install-precommit.sh / uninstall-precommit.sh."""
+"""Round-trip tests for install-precommit-lint.sh / uninstall-precommit-lint.sh."""
 
 import json
 import os
@@ -10,8 +10,8 @@ import pytest
 import yaml
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
-INSTALL = os.path.join(REPO_ROOT, "install-precommit.sh")
-UNINSTALL = os.path.join(REPO_ROOT, "uninstall-precommit.sh")
+INSTALL = os.path.join(REPO_ROOT, "install-precommit-lint.sh")
+UNINSTALL = os.path.join(REPO_ROOT, "uninstall-precommit-lint.sh")
 REPO_URL = "https://github.com/avishek-sen-gupta/python-fp-lint"
 
 

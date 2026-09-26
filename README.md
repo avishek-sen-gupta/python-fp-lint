@@ -398,7 +398,7 @@ turns a broken install into a silently passing commit.
 From the root of the project you want to gate:
 
 ```bash
-/path/to/python-fp-lint/install-precommit.sh
+/path/to/python-fp-lint/install-precommit-lint.sh
 ```
 
 It copies the 27 ast-grep rule files into `.python-fp-lint/` at the repo root, seeds `fp.json`
@@ -433,7 +433,7 @@ a YAML parser, so your comments and key order survive.
 To undo it, from the same project root:
 
 ```bash
-/path/to/python-fp-lint/uninstall-precommit.sh
+/path/to/python-fp-lint/uninstall-precommit-lint.sh
 ```
 
 It removes the python-fp-lint block from `.pre-commit-config.yaml` (deleting the file if
@@ -480,7 +480,7 @@ pre-commit run python-fp-lint-check --hook-stage manual --files src/app.py # spe
 ```
 
 `--all-files` means files git knows about. A brand-new file you haven't `git add`ed is skipped,
-so name it with `--files`. Re-running `install-precommit.sh` adds this hook to a project wired
+so name it with `--files`. Re-running `install-precommit-lint.sh` adds this hook to a project wired
 before it existed.
 
 To lint the entire repo regardless of git state (tracked, untracked, staged or not), skip
@@ -672,8 +672,8 @@ commands/
 
 install-claude-hook.sh     # Wires hook into a project's .claude/settings.json
 uninstall-claude-hook.sh   # Undoes install-claude-hook.sh
-install-precommit.sh       # Wires hook into a project's .pre-commit-config.yaml
-uninstall-precommit.sh     # Undoes install-precommit.sh
+install-precommit-lint.sh       # Wires hook into a project's .pre-commit-config.yaml
+uninstall-precommit-lint.sh     # Undoes install-precommit-lint.sh
 .pre-commit-hooks.yaml     # Hook manifest for the pre-commit framework
 ```
 
