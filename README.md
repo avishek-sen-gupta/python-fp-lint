@@ -586,6 +586,42 @@ else is left in it) and removes `pyrightconfig.json` **only if it is still exact
 installer seeded** -- any edit of your own and it is kept. Like the lint uninstaller, it does
 not run `pre-commit uninstall`, because that git hook runs every hook in the config.
 
+## Black hook
+
+A third installer, for the formatter. There is nothing clever here -- it wires the standard
+`psf/black` hook -- but it saves hand-editing `.pre-commit-config.yaml`, and it uninstalls
+cleanly:
+
+```bash
+/path/to/python-fp-lint/install-precommit-black.sh
+/path/to/python-fp-lint/uninstall-precommit-black.sh
+```
+
+```yaml
+- repo: https://github.com/psf/black
+  rev: 26.5.1
+  hooks:
+    - id: black
+```
+
+Two things set it apart from the other two gates.
+
+**No config file is seeded.** Black's premise is not having settings. If you want
+`line-length` or `target-version`, they belong in your own `pyproject.toml` under
+`[tool.black]` -- not in something an installer wrote and an uninstaller would have to reason
+about deleting. The uninstaller therefore removes the hook and nothing else; your
+`pyproject.toml` is never touched, and your files stay formatted, which is the point of
+having run it.
+
+**This hook rewrites your files.** The lint and Pyright gates report; Black edits. pre-commit
+treats a hook that modified the worktree as a failure, so the commit that first reformats
+something aborts -- re-stage and commit again. Get it over with in one go, and get a tidy,
+reviewable commit out of it:
+
+```bash
+pre-commit run black --all-files
+```
+
 ## Violation ratchet
 
 The pre-commit gate blocks on *every* violation in a staged file, which a codebase with
@@ -752,6 +788,8 @@ install-precommit-lint.sh         # Wires the lint gate into .pre-commit-config.
 uninstall-precommit-lint.sh       # Undoes install-precommit-lint.sh
 install-precommit-pyright.sh      # Wires Pyright into .pre-commit-config.yaml
 uninstall-precommit-pyright.sh    # Undoes install-precommit-pyright.sh
+install-precommit-black.sh        # Wires Black into .pre-commit-config.yaml
+uninstall-precommit-black.sh      # Undoes install-precommit-black.sh
 .pre-commit-hooks.yaml            # Hook manifest for the pre-commit framework
 ```
 
