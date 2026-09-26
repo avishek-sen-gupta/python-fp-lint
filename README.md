@@ -527,8 +527,8 @@ Set a baseline path in the config file and the gate switches to ratchet mode:
 ```
 
 A relative path resolves against the config file, so the two can be checked in side by side.
-`--baseline PATH` overrides it. With no baseline configured, `precommit` behaves exactly as
-before.
+`--baseline PATH` overrides it, on `precommit` and `baseline` — `check` has no ratchet mode
+and rejects the flag. With no baseline configured, `precommit` behaves exactly as before.
 
 ```bash
 # Record today's number -- run this once, at adoption
@@ -550,22 +550,57 @@ The file holds one number:
 | Total vs baseline | Result |
 |---|---|
 | higher | **Commit blocked** (exit 1). Prints the violations in the files you staged, plus a count of the rest. |
-| equal | Passes. |
+| equal | Passes, silently. |
 | lower | Passes, rewrites the file to the new total and `git add`s it, so the improvement lands in this commit and cannot be given back. |
 
-`--no-tighten` suppresses the rewrite and the staging. That is what CI uses: in a fresh
-checkout the index is HEAD and nothing is staged, so `precommit --no-tighten` lints the whole
-tree and compares. No separate CI command is needed.
+`--no-tighten` suppresses the rewrite and the staging. A fall then passes with a warning
+naming the new number, so it can still be recorded deliberately:
+
+```
+ratchet: 4312 → 4309 (-3) — not tightened (--no-tighten); run `baseline update` to record it
+```
+
+That is what CI uses: in a fresh checkout the index is HEAD and nothing is staged, so
+`precommit --no-tighten` lints the whole tree and compares. No separate CI command is needed.
 
 ```yaml
 - run: python-fp-lint precommit --config fp.json --no-tighten
 ```
 
+### What a blocked commit prints
+
+With files staged — a normal commit — only your staged files' violations are listed, then
+`N further violation(s) in the rest of the repo, in files you did not stage`. The raw list
+runs to thousands of lines on the codebases this exists for, and the regression is almost
+always in what you just touched. `check` still prints everything.
+
+With **nothing** staged — CI — there is nothing to filter to, so the whole list is printed
+instead of an empty report, capped at 50 entries with a trailing
+``… and N more (run `check` for the full list)``.
+
+`--format json` in ratchet mode carries two counts, because the printed list is a subset:
+
+| Key | Is |
+|---|---|
+| `violation_count` | the repo-wide total — the number the ratchet compares |
+| `reported_violation_count` | the length of the `violations` array |
+| `ratchet` | `{ "baseline": N, "total": N, "tightened": bool }` |
+
+`python-fp-lint schema` describes them under `precommit_ratchet_output`. For `check`,
+`violation_count` is still the length of `violations`.
+
 ### What the total counts
 
 Every violation from all three backends, flat and unweighted — ast-grep, Ruff and beniget.
-The tree that gets counted is the **index**: tracked files, with unstaged edits read from
-`git show :path`. Untracked files are not counted, because they are not part of the commit.
+The tree that gets counted is the **index**, not your working tree: `precommit` writes the
+whole index into a temp directory with `git checkout-index` and lints that. Untracked files
+are not counted, because they are not part of the commit; unstaged edits are not counted
+either, because they are not part of the commit yet.
+
+The whole index is written, not just the `.py` files, so a `pyproject.toml` or `ruff.toml`
+carrying `per-file-ignores` or `extend-exclude` applies exactly as it does when you run Ruff
+yourself. That is why the number CI computes matches the number you get locally with a dirty
+tree, and why merely touching an excluded file does not move it.
 
 Two things the number is sensitive to:
 
@@ -580,6 +615,20 @@ Two things the number is sensitive to:
 Ratchet mode always enforces `--strict`: a missing `ast-grep` or `ruff` contributes zero
 violations, which would read as an improvement and tighten the baseline toward zero.
 
+### With the pre-commit framework
+
+Two things look odd the first time and are both by design.
+
+**The filenames pre-commit passes are ignored.** The framework hands each hook the files it
+selected for the commit; ratchet mode measures the whole repo, so there is nothing useful to
+do with a subset. The total is a whole-repo number or it is not a ratchet.
+
+**A tightening run fails that commit.** When the total falls, the hook rewrites
+`fp-baseline.json` and `git add`s it — so pre-commit sees a modified file, reports
+`files were modified by this hook`, and fails the run. Nothing is wrong: the lower number is
+already staged, and re-running `git commit` succeeds. This is exactly how the Black hook
+behaves when it reformats something.
+
 ## Architecture
 
 ```
@@ -589,6 +638,8 @@ python_fp_lint/
 ├── result.py              # LintResult, LintViolation dataclasses
 ├── rules_meta.py          # Rule metadata reader (for CLI rules/schema commands)
 ├── precommit.py           # Staged-blob linting for the git commit gate
+├── ratchet.py             # Whole-index total, verdict and auto-tighten
+├── baseline.py            # The ratchet's baseline file and path resolution
 ├── __init__.py            # Public API: LintGate, LintResult, LintViolation
 ├── __main__.py            # CLI entry point (text + JSON output)
 ├── sgconfig.yml           # ast-grep configuration

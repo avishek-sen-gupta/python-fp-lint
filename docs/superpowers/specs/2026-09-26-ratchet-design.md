@@ -36,7 +36,9 @@ Its content is one number:
 ```
 
 A `--baseline PATH` flag overrides the config key, following the project's existing
-resolution order (CLI > config file > default).
+resolution order (CLI > config file > default). It is offered by `precommit` and
+`baseline` only: `check` has no ratchet mode, so accepting the flag there would read as
+support for one that does not exist.
 
 When no baseline is configured, nothing in this design activates: `precommit` behaves
 exactly as it does today.
@@ -63,40 +65,81 @@ Two consequences the operator owns:
 The tree that would exist if the commit landed — the index, not the worktree.
 
 ```
-tracked   = git ls-files -z                    # the index; untracked files are not in it
-dirty     = git diff --name-only -z            # worktree differs from index
-lint(f)   = git show :f   if f in dirty
-            worktree f    otherwise
+git checkout-index -a --prefix=<workdir>/     # the whole index, one call
+lint(*.py under <workdir>)
 ```
 
-Untracked files are excluded because they are not part of the commit. Materializing
-only the dirty subset keeps this to a handful of `git show` calls rather than one per
-file. Materialization reuses `precommit.materialize_staged`, which already writes
-`git show :path` blobs under a temp dir outside the repo; it needs only to accept an
-arbitrary path list rather than the staged one.
+The **whole** index is materialized, not just the `.py` files and not just the dirty
+ones. Untracked files are excluded because they are not part of the commit.
 
-Exclude globs apply against the repo-relative path before materialization, exactly as
-`evaluate_staged` does today.
+Materializing everything is what makes the total a function of the index *by
+construction*. An earlier design linted clean files in place and materialized only the
+dirty subset, which kept this to a handful of `git show` calls — but it wrote `.py`
+files alone, so Ruff found no `pyproject.toml` or `ruff.toml` above them. Ruff resolves
+`per-file-ignores`, `extend-exclude` and the rest of its directory-scoped settings from
+the closest config file in a scanned file's ancestors, so those settings applied to a
+file only while its worktree copy happened to match its index entry. Appending a blank
+line to an excluded legacy file — leaving the index content byte-identical — changed the
+total. `checkout-index` brings the config files along, and the "handful of git calls"
+optimisation is deliberately given up for that.
+
+Because the total no longer depends on worktree state, CI on a fresh checkout and a
+developer with a dirty tree compute the same number from the same index.
+
+Exclude globs apply against the repo-relative path — the path the file has *inside* the
+materialized tree, which mirrors the repo — exactly as `evaluate_staged` does today, and
+`remap_to_repo_relative` reports violations at that repo-relative path rather than the
+temp one that was scanned.
+
+Git writes the blobs itself, so a tracked file that is not valid UTF-8 is materialized
+verbatim rather than decoded. `precommit.materialize_staged`, which the non-ratchet
+staged gate still uses, reads and writes the same blobs as bytes for the same reason.
 
 ### The verdict
 
 | Condition | Exit | Behaviour |
 |---|---|---|
-| `total > baseline` | 1 | Print `ratchet: 4312 → 4315 (+3)`, then the violations **in staged files only**, with a trailing count of the rest. The baseline file is not touched. |
+| `total > baseline` | 1 | Print `ratchet: 4312 → 4315 (+3)`, then the regression report below. The baseline file is not touched. |
 | `total == baseline` | 0 | Silent. |
-| `total < baseline` | 0 | Rewrite the file to the new total, `git add` it, print `ratchet: 4312 → 4309 (-3)`. |
+| `total < baseline`, tightening | 0 | Rewrite the file to the new total, `git add` it, print `ratchet: 4312 → 4309 (-3)`. |
+| `total < baseline`, `--no-tighten` | 0 | Print `ratchet: 4312 → 4309 (-3) — not tightened (--no-tighten); run `baseline update` to record it`. The file is not touched. |
 
-Printing only the staged files' violations is what makes a total-based ratchet usable:
-the raw list is thousands of lines on the codebase this feature exists for, and the
-regression is almost always in what the developer just touched. The full list stays
-available through `check`. Filtering costs nothing — the violations are already in hand
-and the staged set is already known — and it restores the locality a single total
-otherwise throws away.
+#### The regression report
+
+Which violations get named depends on whether anything is staged.
+
+**Something is staged** — a developer's commit. Only the staged files' violations are
+listed, followed by `N further violation(s) in the rest of the repo, in files you did
+not stage`, where `N` is `total - len(staged violations)`. This is what makes a
+total-based ratchet usable: the raw list is thousands of lines on the codebase this
+feature exists for, and the regression is almost always in what the developer just
+touched. The full list stays available through `check`.
+
+**Nothing is staged** — CI on a fresh checkout. Filtering to the staged set would leave
+the report empty, which is the one case where the tool has to say something: there is no
+developer at a terminal to run `check`. The full list is printed instead, capped at 50,
+with a trailing `… and N more (run `check` for the full list)` when it overflows. There
+is no "further … elsewhere" line, because with nothing staged there is no *here* for a
+remainder to be further than.
+
+#### JSON output
+
+`--format json` in ratchet mode emits `passed`, `ratchet` (`baseline`, `total`,
+`tightened`), and **two** counts:
+
+- `violation_count` — the repo-wide total, the number the ratchet compares.
+- `reported_violation_count` — the length of the `violations` array, which carries the
+  same subset the text output names.
+
+Two counts rather than one because `check`'s invariant is `violation_count ==
+len(violations)`, and a filtered or capped ratchet report cannot honour it with a single
+field without lying to an agent reading the output. `schema` describes both, and the
+`ratchet` object, under `precommit_ratchet_output`.
 
 `--no-tighten` suppresses the rewrite and the `git add`, turning a drop into a pass with
-a warning. This is what CI uses: in a fresh checkout the index is HEAD and nothing is
-staged, so `precommit --no-tighten` lints the whole HEAD tree and compares. No separate
-CI command is needed.
+the warning in the table above. This is what CI uses: in a fresh checkout the index is
+HEAD and nothing is staged, so `precommit --no-tighten` lints the whole HEAD tree and
+compares. No separate CI command is needed.
 
 ### CLI surface
 
@@ -143,11 +186,19 @@ timeout realistic for a whole-repo scan.
 - The total equals the sum across all three backends for a known fixture.
 - A file with unstaged edits is counted from its index content, not its worktree content.
 - An untracked file does not contribute to the total.
+- A `pyproject.toml` with `per-file-ignores` produces the same total whether the ignored
+  file's worktree copy is clean or dirty.
+- A tracked file that is not valid UTF-8 is linted (Ruff's `E902`) rather than crashing
+  the run, in both the clean and the unstaged-edit case.
 - A rise fails with exit 1 and leaves the baseline file byte-identical.
 - A rise in a repo with violations in unstaged files prints only the staged files'
   violations, plus the count of the remainder.
+- A rise with **nothing** staged names the violations rather than printing an empty
+  report, and caps the list.
+- `violation_count` and `reported_violation_count` differ when the report is filtered,
+  and `reported_violation_count == len(violations)` always.
 - A fall rewrites the baseline and stages it; `git diff --cached` shows the file.
-- `--no-tighten` on a fall exits 0 and leaves the file byte-identical.
+- `--no-tighten` on a fall exits 0, leaves the file byte-identical, and says so.
 - A missing `ruff` binary raises `BackendError`, exits 2, and does **not** write the
   baseline. Same for a timeout and for unparseable backend output.
 - A repo with more than 1,000 files produces the same total as the same repo linted in
