@@ -218,6 +218,11 @@ def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
 
 
 def _run_precommit(args):
+    # Must run before anything reads --config: resolve_baseline() eagerly opens
+    # and parses the config file, which would reorder the two failure modes
+    # for `--strict` with both a missing backend and a bad --config, breaking
+    # the no-baseline path's "byte-for-byte unchanged" guarantee.
+    _enforce_strict(args)
     repo_root = _git_repo_root()
     gate = _build_gate(args)
     baseline_path = gate.resolve_baseline()
@@ -229,7 +234,6 @@ def _run_precommit(args):
 
 def _run_precommit_staged(args, gate: LintGate, repo_root: str) -> None:
     """The original gate: every violation in a staged file blocks the commit."""
-    _enforce_strict(args)
     # Materialize staged blobs outside the repo: ast-grep and Ruff both honour
     # the enclosing tree's ignore rules, and a temp dir inside it may be skipped.
     with tempfile.TemporaryDirectory(prefix="python-fp-lint-staged-") as workdir:

@@ -465,3 +465,47 @@ class TestPrecommitWithoutBaselineIsUnchanged:
             env={**os.environ, "PYTHONPATH": REPO_ROOT},
         )
         assert result.returncode == 1
+
+    def test_strict_checks_backends_before_reading_config(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """`--strict` must fail on a missing backend before ever opening
+        `--config`, so a bad config path never masks the backend error.
+
+        In-process rather than a subprocess, because `_which` falls back to
+        the interpreter's own bin directory -- where `ruff` and `ast-grep`
+        live -- so no amount of PATH manipulation in a child process makes
+        them unreachable (mirrors `TestBaselineRefusesToGuess`).
+        """
+        from python_fp_lint.__main__ import _run_precommit
+
+        def git(*args):
+            subprocess.run(
+                ["git", *args], cwd=tmp_path, check=True, capture_output=True
+            )
+
+        git("init", "-q", "--template=")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            "python_fp_lint.__main__.missing_backends", lambda: ["ruff"]
+        )
+
+        class Args:
+            config = str(tmp_path / "does-not-exist.json")
+            baseline = None
+            format = "text"
+            ruff_select = None
+            ast_grep_rules = None
+            exclude = None
+            max_complexity = None
+            max_statements = None
+            strict = True
+            files = []
+            no_tighten = False
+
+        with pytest.raises(SystemExit) as exc:
+            _run_precommit(Args())
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert "required lint backend(s) not found" in err
+        assert "config" not in err.lower()
