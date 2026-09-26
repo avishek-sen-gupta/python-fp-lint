@@ -180,26 +180,33 @@ def _git_repo_root() -> str:
 _MAX_REPORTED_VIOLATIONS = 50
 
 
-def _reported_violations(violations, staged: set[str]) -> list:
+def _reported_violations(violations, staged: set[str]) -> tuple[list, bool]:
     """The subset of the repo's violations a ratchet report shows.
 
-    With files staged, the staged ones. The raw list runs to thousands of
+    Normally the staged files' violations. The raw list runs to thousands of
     lines on the codebases this feature exists for, and the regression is
     almost always in what was just touched; `check` still prints everything.
 
-    With nothing staged -- CI on a fresh checkout, which is exactly what
-    `--no-tighten` is for -- there is no "just touched" to filter to, and
-    filtering would leave the report empty and unactionable. The whole list is
-    shown instead, capped, with the caller printing how many were dropped.
+    The condition is whether the filter produced anything, not whether
+    anything is staged. Nothing staged is the CI case, but a staged set that
+    is entirely clean is just as common -- a baseline stale against the index
+    after a pull, a merge or someone else's commit -- and both would otherwise
+    block a commit while naming no violation at all. Whenever there is nothing
+    local to show, the whole list is shown instead, capped, with the caller
+    printing how many were dropped.
+
+    Returns the list and whether it is the local one, which is what decides
+    how the caller words the count of everything it left out.
     """
-    if staged:
-        return [v for v in violations if v.file in staged]
-    return list(violations[:_MAX_REPORTED_VIOLATIONS])
+    local = [v for v in violations if v.file in staged]
+    if local:
+        return local, True
+    return list(violations[:_MAX_REPORTED_VIOLATIONS]), False
 
 
 def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
     """Print a ratchet verdict and exit 0 (clean or tightened) or 1 (regression)."""
-    reported = _reported_violations(violations, staged)
+    reported, is_local = _reported_violations(violations, staged)
     remainder = len(violations) - len(reported)
 
     if fmt == "json":
@@ -227,12 +234,14 @@ def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
         for v in reported:
             loc = f"{v.file}:{v.line}" if v.line else v.file
             print(f"  [{v.rule}] {loc} — {v.message}")
-        if remainder and staged:
+        if not remainder:
+            pass
+        elif is_local:
             print(
                 f"\n{remainder} further violation(s) in the rest of the repo, "
                 "in files you did not stage."
             )
-        elif remainder:
+        else:
             print(f"\n… and {remainder} more (run `check` for the full list)")
     elif verdict.tightened:
         print(f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta})")
