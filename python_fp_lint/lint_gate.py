@@ -11,6 +11,7 @@ import subprocess
 import sys
 from functools import cache
 
+from python_fp_lint import baseline as baseline_file
 from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.result import LintResult, LintViolation
 
@@ -48,6 +49,7 @@ class LintGate:
         exclude: list[str] | None = None,
         max_complexity: int | None = None,
         max_statements: int | None = None,
+        baseline: str | None = None,
     ):
         self.rules_dir = rules_dir
         self.ruff_select = ruff_select
@@ -57,6 +59,7 @@ class LintGate:
         self.exclude = exclude
         self.max_complexity = max_complexity
         self.max_statements = max_statements
+        self.baseline = baseline
 
     def _config(self, key):
         return _read_config(key, self.config_path)
@@ -83,6 +86,12 @@ class LintGate:
         if config_val and isinstance(config_val, list):
             return config_val
         return []
+
+    def resolve_baseline(self) -> str | None:
+        """Baseline file in force: constructor > config file > none."""
+        return baseline_file.resolve_path(
+            self.baseline, self._config("baseline"), self.config_path
+        )
 
     def is_excluded(self, path: str, project_root: str) -> bool:
         """True when path matches one of the configured exclude globs."""
