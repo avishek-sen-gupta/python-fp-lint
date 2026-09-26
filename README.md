@@ -514,6 +514,78 @@ chmod +x .git/hooks/pre-commit
 For contributors to python-fp-lint itself, the local hook runs Talisman (secret detection), Black
 (auto-format and re-stage), and the full pytest suite — all via `uv run`.
 
+## Pyright gate
+
+Separate from everything above, and optional. `python-fp-lint`'s `no-any-type` rule bans
+*explicit* `Any`; it cannot see the *implicit* `Any` that flows from a missing annotation.
+Pyright's `reportUnknownParameterType` / `reportMissingParameterType` /
+`reportUnknownVariableType` cover exactly that complementary case, so a second installer wires
+Pyright in as its own pre-commit hook.
+
+From the root of the project you want to gate:
+
+```bash
+/path/to/python-fp-lint/install-precommit-pyright.sh
+```
+
+It writes a `pyrightconfig.json` at the repo root and adds one hook to
+`.pre-commit-config.yaml`:
+
+```yaml
+- repo: https://github.com/RobertCraigie/pyright-python
+  rev: v1.1.414
+  hooks:
+    - id: pyright
+```
+
+The hook carries no `stages:` key, so it runs at pre-commit's default commit stage: **it
+blocks.** The `rev` is pinned to a real tag so the wiring works offline, then
+`pre-commit autoupdate --repo <url>` moves it to the latest release. No `--bleeding-edge`
+here, unlike the lint installer -- that one tracks this project's `main`, while
+pyright-python ships tags.
+
+The seeded config is deliberately small:
+
+```json
+{
+  "typeCheckingMode": "strict",
+  "venvPath": ".",
+  "venv": ".venv"
+}
+```
+
+- **No `include`.** Pyright scans the whole repo, which keeps the file layout-agnostic; its
+  own defaults already skip `node_modules`, `__pycache__` and dotted directories.
+- **No `pythonVersion`.** This project's floor is 3.10, but that is not necessarily yours,
+  and pinning ours would flag your valid code. Add it yourself if you want the editor to
+  catch syntax newer than you support.
+- **`venvPath`/`venv`** is the setting that earns its keep: without it, everyone who opens
+  the repo sees phantom unresolved-import errors for your dependencies. Point it elsewhere if
+  your environment is not `.venv`. A missing path is a warning, not an error, so a fresh
+  clone is never blocked by it.
+
+### Strict is strict
+
+There is **no ratchet for Pyright**. Its findings are not part of python-fp-lint's violation
+total, so a codebase that has never been type-checked cannot commit until strict passes. On
+this repo, strict reports 285 errors against 4 in basic mode -- almost all of them the
+`reportUnknown*` family, which is the honest size of the implicit-`Any` problem.
+
+If that is too much to swallow at once, edit `pyrightconfig.json` after installing: set
+`typeCheckingMode` to `"standard"` or `"basic"`, or turn individual rules down to
+`"warning"`, and tighten as you go.
+
+To undo it, from the same project root:
+
+```bash
+/path/to/python-fp-lint/uninstall-precommit-pyright.sh
+```
+
+It removes the Pyright block from `.pre-commit-config.yaml` (deleting the file if nothing
+else is left in it) and removes `pyrightconfig.json` **only if it is still exactly what the
+installer seeded** -- any edit of your own and it is kept. Like the lint uninstaller, it does
+not run `pre-commit uninstall`, because that git hook runs every hook in the config.
+
 ## Violation ratchet
 
 The pre-commit gate blocks on *every* violation in a staged file, which a codebase with
@@ -670,11 +742,17 @@ bin/
 commands/
 └── lint.md                # /lint slash command for Claude Code
 
-install-claude-hook.sh     # Wires hook into a project's .claude/settings.json
-uninstall-claude-hook.sh   # Undoes install-claude-hook.sh
-install-precommit-lint.sh       # Wires hook into a project's .pre-commit-config.yaml
-uninstall-precommit-lint.sh     # Undoes install-precommit-lint.sh
-.pre-commit-hooks.yaml     # Hook manifest for the pre-commit framework
+installer/
+├── precommit_yaml.py             # Shared .pre-commit-config.yaml insert/remove
+└── pyrightconfig.example.json    # Seeded into a project by the Pyright installer
+
+install-claude-hook.sh            # Wires hook into a project's .claude/settings.json
+uninstall-claude-hook.sh          # Undoes install-claude-hook.sh
+install-precommit-lint.sh         # Wires the lint gate into .pre-commit-config.yaml
+uninstall-precommit-lint.sh       # Undoes install-precommit-lint.sh
+install-precommit-pyright.sh      # Wires Pyright into .pre-commit-config.yaml
+uninstall-precommit-pyright.sh    # Undoes install-precommit-pyright.sh
+.pre-commit-hooks.yaml            # Hook manifest for the pre-commit framework
 ```
 
 Each backend is called in sequence: ast-grep, Ruff, beniget. Missing tools are silently skipped —
