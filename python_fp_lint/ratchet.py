@@ -18,6 +18,76 @@ from python_fp_lint.precommit import git_output, remap_to_repo_relative
 from python_fp_lint.result import LintResult
 
 
+class RatchetError(Exception):
+    """The ratchet cannot produce a total it can stand behind.
+
+    Raised for an unusable index as well as for a tightening that could not be
+    recorded. Either way the run has no trustworthy number, and `__main__`
+    turns it into a one-line exit 2 rather than a total.
+    """
+
+
+def _git(repo_root: str, *args: str) -> str:
+    """git_output, with a failure turned into an exit-2 RatchetError.
+
+    `git checkout-index` fails for reasons a user can hit without doing
+    anything exotic -- an index holding both `Mod.py` and `mod.py` on a
+    case-insensitive filesystem is enough -- and a raw RuntimeError from
+    there reaches the user as a traceback.
+    """
+    try:
+        return git_output(repo_root, *args)
+    except RuntimeError as exc:
+        raise RatchetError(str(exc)) from exc
+
+
+def _index_paths(repo_root: str, *args: str) -> list[str]:
+    """Paths from NUL-separated `git ls-files` output, blanks dropped.
+
+    `-u` prefixes each record with `<mode> <sha> <stage>\\t`, and a plain
+    listing has no tab at all, so taking everything after the first tab
+    handles both -- and a path containing a tab keeps it, since `-z` is what
+    delimits records.
+    """
+    records = _git(repo_root, "ls-files", "-z", *args).split("\0")
+    return [r.split("\t", 1)[-1] for r in records if r]
+
+
+def _require_mergeable_index(repo_root: str) -> None:
+    """Refuse to count an index with unmerged entries.
+
+    `checkout-index` skips a conflicted path and still exits 0, so a run
+    mid-conflict would silently under-count. `git commit` refuses with
+    unmerged entries anyway, so this only ever fires for a manual or CI
+    invocation -- which is exactly where a too-low total would get recorded.
+    """
+    unmerged = sorted({p for p in _index_paths(repo_root, "-u")})
+    if unmerged:
+        raise RatchetError(
+            f"the index has {len(unmerged)} unmerged path(s), starting with "
+            f"{unmerged[0]} -- resolve the conflict before counting the repo"
+        )
+
+
+def _verify_materialized(repo_root: str, dest: str) -> None:
+    """Every tracked .py file must have been written. A shortfall raises.
+
+    `checkout-index` reports what it could not write only sometimes; a
+    skip-worktree entry it just passes over, exit 0, no diagnostic. Under
+    auto-tighten a silent shortfall is unrecoverable -- the missing files'
+    violations vanish, the total falls, and the lower number is written and
+    staged -- so the materialization is checked rather than trusted.
+    """
+    expected = {p for p in _index_paths(repo_root) if p.endswith(".py")}
+    missing = sorted(expected - set(_python_files_under(dest)))
+    if missing:
+        raise RatchetError(
+            f"git checkout-index did not write {len(missing)} tracked Python "
+            f"file(s), starting with {missing[0]} -- refusing to produce a "
+            "total from an incomplete index"
+        )
+
+
 def materialize_index(repo_root: str, dest: str) -> None:
     """Write the whole index -- every tracked file -- into dest.
 
@@ -26,11 +96,25 @@ def materialize_index(repo_root: str, dest: str) -> None:
     decode. Untracked files are deliberately absent: they are not part of the
     commit, so counting them would block a commit over code that is not being
     made.
+
+    `--ignore-skip-worktree-bits` because a sparse checkout marks everything
+    outside the cone skip-worktree, and `checkout-index` would otherwise pass
+    over those paths without a word -- turning a monorepo developer's ordinary
+    `git commit` into a windfall that auto-tighten then banks. The index is
+    the whole index whether or not the worktree materializes all of it.
     """
     os.makedirs(dest, exist_ok=True)
+    _require_mergeable_index(repo_root)
     # --prefix is a literal string prepended to each path, so it needs its
     # trailing separator; os.path.join with "" supplies one portably.
-    git_output(repo_root, "checkout-index", "-a", f"--prefix={os.path.join(dest, '')}")
+    _git(
+        repo_root,
+        "checkout-index",
+        "-a",
+        "--ignore-skip-worktree-bits",
+        f"--prefix={os.path.join(dest, '')}",
+    )
+    _verify_materialized(repo_root, dest)
 
 
 def _python_files_under(root: str) -> list[str]:
@@ -55,9 +139,10 @@ def evaluate_index(repo_root: str, workdir: str, gate: LintGate) -> LintResult:
     the dirty ones -- is deliberately gone, and with it the "handful of git
     calls rather than one per file" optimisation. That split materialized
     `.py` files alone, so Ruff found no `pyproject.toml` or `ruff.toml` above
-    them and its directory-scoped settings (`per-file-ignores`,
-    `extend-exclude`) applied to a file only while its worktree copy happened
-    to be clean. `checkout-index -a` brings the config files along.
+    them and its directory-scoped settings -- `per-file-ignores`, and
+    `extend-exclude` only where `force-exclude` is set, since the gate always
+    names paths explicitly -- applied to a file only while its worktree copy
+    happened to be clean. `checkout-index` brings the config files along.
     """
     materialize_index(repo_root, workdir)
     tracked = gate.filter_excluded(_python_files_under(workdir), repo_root)
@@ -76,10 +161,6 @@ def total_violations(repo_root: str, gate: LintGate) -> LintResult:
     """Lint the whole index. `len(result.violations)` is the ratchet's number."""
     with tempfile.TemporaryDirectory(prefix="python-fp-lint-index-") as workdir:
         return evaluate_index(repo_root, workdir, gate)
-
-
-class RatchetError(Exception):
-    """The baseline could not be tightened, so the run's result is unsafe."""
 
 
 @dataclass

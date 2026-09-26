@@ -521,6 +521,71 @@ class TestPrecommitRatchet:
         assert len(data["violations"]) == data["reported_violation_count"]
         assert {v["file"] for v in data["violations"]} == {"other.py"}
 
+    def test_a_clean_staged_file_still_names_the_violations(self, tmp_path):
+        """A staged set that filters to nothing is the empty-report bug again.
+
+        Realistic whenever the baseline is stale against the index: after a
+        pull, a merge, or someone else's commit.
+        """
+        repo = self._repo(tmp_path, self.DIRTIER, baseline_total=1)
+        (repo / "clean.py").write_text("x = 1\n")
+        subprocess.run(["git", "add", "clean.py"], cwd=repo, check=True)
+        result = self._run_text(repo, "--no-tighten")
+        assert result.returncode == 1
+        assert "ratchet: 1 → 2 (+1)" in result.stdout
+        assert result.stdout.count("mod.py:") == 2
+        assert "did not stage" not in result.stdout
+
+        data = json.loads(self._run(repo, "--no-tighten").stdout)
+        assert data["violation_count"] == 2
+        assert data["reported_violation_count"] == 2
+        assert len(data["violations"]) == 2
+
+    def test_a_sparse_checkout_does_not_bank_a_windfall(self, tmp_path):
+        """`checkout-index -a` skipped skip-worktree entries, exit 0, silently."""
+        repo = self._repo(tmp_path, "x = 1\n", baseline_total=2)
+        (repo / "keep").mkdir()
+        (repo / "keep" / "a.py").write_text("y = 2\n")
+        (repo / "away").mkdir()
+        (repo / "away" / "b.py").write_text(self.DIRTIER)
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "two trees"], cwd=repo, check=True)
+        subprocess.run(["git", "sparse-checkout", "set", "keep"], cwd=repo, check=True)
+        assert not (repo / "away" / "b.py").exists()  # skip-worktree
+
+        result = self._run(repo)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout)["ratchet"]["total"] == 2
+        assert json.loads((repo / "fp-baseline.json").read_text()) == {"total": 2}
+
+    def test_an_unmerged_index_exits_two(self, tmp_path):
+        repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
+        base = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+        def git(*args, check=True):
+            return subprocess.run(
+                ["git", *args], cwd=repo, check=check, capture_output=True
+            )
+
+        git("checkout", "-q", "-b", "other")
+        (repo / "mod.py").write_text(self.DIRTIER)
+        git("commit", "-qam", "theirs")
+        git("checkout", "-q", base)
+        (repo / "mod.py").write_text(self.DIRTY + "e = []\n")
+        git("commit", "-qam", "ours")
+        git("merge", "other", check=False)
+
+        result = self._run(repo)
+        assert result.returncode == 2
+        assert "Traceback" not in result.stderr
+        assert "unmerged" in result.stderr
+
     def test_json_with_nothing_staged_lists_the_violations(self, tmp_path):
         repo = self._repo(tmp_path, self.DIRTIER, baseline_total=1)
         data = json.loads(self._run(repo, "--no-tighten").stdout)

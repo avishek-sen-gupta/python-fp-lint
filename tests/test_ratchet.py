@@ -144,6 +144,91 @@ class TestTotal:
         assert _total(tmp_path) == 0
 
 
+class TestIncompleteMaterialization:
+    """`git checkout-index -a` can skip entries and still exit 0.
+
+    Under auto-tighten a silent shortfall is unrecoverable: the missing
+    files' violations vanish, the total falls, and the lower number is
+    written and staged. So it is checked, not trusted.
+    """
+
+    def test_sparse_checkout_still_counts_files_outside_the_cone(self, repo):
+        """The catastrophic case: an ordinary commit from a sparse checkout."""
+        (repo / "keep").mkdir()
+        (repo / "keep" / "a.py").write_text(CLEAN)
+        (repo / "away").mkdir()
+        (repo / "away" / "b.py").write_text(DIRTY)
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "two trees")
+        _git(repo, "sparse-checkout", "set", "keep")
+        assert not (repo / "away" / "b.py").exists()  # skip-worktree, not on disk
+        assert "S " in _git(repo, "ls-files", "-v", "away/b.py")
+        assert _total(repo) == 2  # counted from the index all the same
+
+    def test_sparse_checkout_materializes_the_excluded_file(self, repo, tmp_path):
+        (repo / "keep").mkdir()
+        (repo / "keep" / "a.py").write_text(CLEAN)
+        (repo / "away").mkdir()
+        (repo / "away" / "b.py").write_text(DIRTY)
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "two trees")
+        _git(repo, "sparse-checkout", "set", "keep")
+        dest = tmp_path / "idx"
+        ratchet.materialize_index(str(repo), str(dest))
+        assert (dest / "away" / "b.py").read_text() == DIRTY
+
+    def test_an_unmerged_index_refuses_to_produce_a_total(self, repo):
+        """`checkout-index` skips a conflicted path and exits 0 regardless."""
+        (repo / "conflict.py").write_text("x = 0\n")
+        _git(repo, "add", "conflict.py")
+        _git(repo, "commit", "-qm", "base")
+        ours = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+
+        _git(repo, "checkout", "-q", "-b", "other")
+        (repo / "conflict.py").write_text("x = 1\n")
+        _git(repo, "commit", "-qam", "theirs")
+        _git(repo, "checkout", "-q", ours)
+        (repo / "conflict.py").write_text("x = 2\n")
+        _git(repo, "commit", "-qam", "ours")
+        subprocess.run(["git", "merge", "other"], cwd=repo, capture_output=True)
+        assert "UU" in _git(repo, "status", "--short")
+
+        with pytest.raises(ratchet.RatchetError) as exc:
+            _total(repo)
+        # One path, named plainly -- `ls-files -u` reports three stage lines
+        # prefixed with mode/sha/stage, and none of that belongs in the error.
+        assert "1 unmerged path(s), starting with conflict.py" in str(exc.value)
+
+    def test_a_shortfall_raises_rather_than_undercounting(self, repo, monkeypatch):
+        """Whatever the cause, a file git did not write must not be a windfall.
+
+        The stand-in for a skipped entry is a `checkout-index` narrowed to one
+        path: same observable outcome -- exit 0, a tracked .py file absent
+        from the tree -- without depending on git's reason for skipping.
+        """
+        (repo / "other.py").write_text(DIRTY)
+        _git(repo, "add", "other.py")
+
+        real = ratchet._git
+
+        def write_only_mod(repo_root, *args):
+            if args[0] == "checkout-index":
+                prefix = args[-1]
+                return real(repo_root, "checkout-index", prefix, "--", "mod.py")
+            return real(repo_root, *args)
+
+        monkeypatch.setattr(ratchet, "_git", write_only_mod)
+        with pytest.raises(ratchet.RatchetError, match="other.py"):
+            _total(repo)
+
+    def test_a_failing_checkout_index_is_a_ratchet_error(self, repo, tmp_path):
+        """Minor #4: a RuntimeError here reached the user as a traceback."""
+        dest = tmp_path / "idx"
+        (dest / "mod.py").mkdir(parents=True)  # git cannot write a file there
+        with pytest.raises(ratchet.RatchetError):
+            ratchet.materialize_index(str(repo), str(dest))
+
+
 class TestRuffDirectoryConfig:
     """C1: the total must be a function of the committed content alone.
 
