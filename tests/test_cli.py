@@ -199,3 +199,122 @@ class TestSelfLint:
         rules_hit = {v["rule"] for v in data["violations"]}
         # The linter's own code uses patterns it flags
         assert len(rules_hit) > 1, f"Expected multiple rule types, got: {rules_hit}"
+
+
+class TestBaselineCommand:
+    def _repo(self, tmp_path):
+        def git(*args):
+            subprocess.run(
+                ["git", *args], cwd=tmp_path, check=True, capture_output=True
+            )
+
+        git("init", "-q", "--template=")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "Test")
+        (tmp_path / "mod.py").write_text('d = {}\nd["k"] = 1\n')
+        git("add", "mod.py")
+        git("commit", "-qm", "init")
+        return tmp_path
+
+    def _run(self, repo, *args):
+        return subprocess.run(
+            [sys.executable, "-m", "python_fp_lint", *args],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        )
+
+    def test_update_creates_the_file(self, tmp_path):
+        repo = self._repo(tmp_path)
+        path = repo / "b.json"
+        result = self._run(
+            repo, "baseline", "update", "--config", CONFIG, "--baseline", str(path)
+        )
+        assert result.returncode == 0
+        assert json.loads(path.read_text()) == {"total": 1}
+
+    def test_update_overwrites_an_existing_file(self, tmp_path):
+        repo = self._repo(tmp_path)
+        path = repo / "b.json"
+        path.write_text('{"total": 999}\n')
+        self._run(
+            repo, "baseline", "update", "--config", CONFIG, "--baseline", str(path)
+        )
+        assert json.loads(path.read_text()) == {"total": 1}
+
+    def test_show_reports_recorded_and_current(self, tmp_path):
+        repo = self._repo(tmp_path)
+        path = repo / "b.json"
+        path.write_text('{"total": 5}\n')
+        result = self._run(
+            repo,
+            "--format",
+            "json",
+            "baseline",
+            "show",
+            "--config",
+            CONFIG,
+            "--baseline",
+            str(path),
+        )
+        assert result.returncode == 0
+        assert json.loads(result.stdout) == {
+            "baseline": 5,
+            "total": 1,
+            "path": str(path),
+        }
+
+    def test_show_on_a_missing_file_exits_two(self, tmp_path):
+        repo = self._repo(tmp_path)
+        result = self._run(
+            repo,
+            "baseline",
+            "show",
+            "--config",
+            CONFIG,
+            "--baseline",
+            str(repo / "absent.json"),
+        )
+        assert result.returncode == 2
+        assert "baseline update" in result.stderr
+
+    def test_no_baseline_anywhere_exits_two(self, tmp_path):
+        repo = self._repo(tmp_path)
+        result = self._run(repo, "baseline", "show", "--config", CONFIG)
+        assert result.returncode == 2
+        assert "no baseline configured" in result.stderr
+
+
+class TestBaselineRefusesToGuess:
+    """A backend that cannot run contributes zero violations, which would read
+    as a clean repo and record a baseline of zero.
+
+    In-process rather than a subprocess, because `_which` falls back to the
+    interpreter's own bin directory -- where `ruff` and `ast-grep` live -- so
+    no amount of PATH manipulation in a child process makes them unreachable.
+    """
+
+    class _Args:
+        def __init__(self, config, baseline):
+            self.config = config
+            self.baseline = baseline
+            self.format = "text"
+            self.ruff_select = None
+            self.ast_grep_rules = None
+            self.exclude = None
+            self.max_complexity = None
+            self.max_statements = None
+            self.strict = False
+
+    def test_update_exits_two_without_writing(self, tmp_path, monkeypatch):
+        from python_fp_lint.__main__ import _run_baseline_update
+
+        path = tmp_path / "b.json"
+        monkeypatch.setattr(
+            "python_fp_lint.__main__.missing_backends", lambda: ["ruff"]
+        )
+        with pytest.raises(SystemExit) as exc:
+            _run_baseline_update(self._Args(CONFIG, str(path)))
+        assert exc.value.code == 2
+        assert not path.exists()

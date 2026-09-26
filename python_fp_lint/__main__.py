@@ -10,8 +10,15 @@ import subprocess
 import sys
 import tempfile
 
+from python_fp_lint import baseline as baseline_file
+from python_fp_lint import ratchet
 from python_fp_lint.hook_check import main as _hook_check_main
-from python_fp_lint.lint_gate import ConfigError, LintGate, missing_backends
+from python_fp_lint.lint_gate import (
+    BackendError,
+    ConfigError,
+    LintGate,
+    missing_backends,
+)
 from python_fp_lint.precommit import evaluate_staged
 from python_fp_lint.rules_meta import list_rules
 
@@ -31,7 +38,69 @@ def _build_gate(args) -> LintGate:
         max_complexity=getattr(args, "max_complexity", None),
         max_statements=getattr(args, "max_statements", None),
         config_path=args.config or None,
+        baseline=getattr(args, "baseline", None),
     )
+
+
+def _resolve_baseline_or_exit(args) -> str:
+    """The baseline path in force, or exit 2 -- these commands require one."""
+    path = _build_gate(args).resolve_baseline()
+    if path is None:
+        print(
+            "error: no baseline configured; pass --baseline PATH or set "
+            '"baseline" in the config file',
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return path
+
+
+def _require_backends() -> None:
+    """Exit 2 when a backend is unreachable.
+
+    The ratchet enforces this unconditionally: a missing backend contributes
+    zero violations, which reads as an improvement and would tighten the
+    baseline toward zero.
+    """
+    missing = missing_backends()
+    if missing:
+        print(
+            f"error: required lint backend(s) not found: {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
+def _current_total(args) -> int:
+    _require_backends()
+    result = ratchet.total_violations(_git_repo_root(), _build_gate(args))
+    return len(result.violations)
+
+
+def _run_baseline_update(args):
+    path = _resolve_baseline_or_exit(args)
+    total = _current_total(args)
+    baseline_file.write(path, total)
+    if args.format == "json":
+        json.dump(
+            {"baseline": total, "total": total, "path": path}, sys.stdout, indent=2
+        )
+        print()
+    else:
+        print(f"baseline recorded: {total} violation(s) -> {path}")
+
+
+def _run_baseline_show(args):
+    path = _resolve_baseline_or_exit(args)
+    recorded = baseline_file.read(path)
+    total = _current_total(args)
+    if args.format == "json":
+        json.dump(
+            {"baseline": recorded, "total": total, "path": path}, sys.stdout, indent=2
+        )
+        print()
+    else:
+        print(f"baseline: {recorded}\ncurrent:  {total}\npath:     {path}")
 
 
 def _enforce_strict(args) -> None:
@@ -40,15 +109,8 @@ def _enforce_strict(args) -> None:
     Without this, a missing `sg` or `ruff` silently disables whole rule
     families -- an invisible pass, which is the wrong default for a gate.
     """
-    if not getattr(args, "strict", False):
-        return
-    missing = missing_backends()
-    if missing:
-        print(
-            f"error: required lint backend(s) not found: {', '.join(missing)}",
-            file=sys.stderr,
-        )
-        sys.exit(2)
+    if getattr(args, "strict", False):
+        _require_backends()
 
 
 def _report(result, fmt: str) -> None:
@@ -84,10 +146,15 @@ def _report(result, fmt: str) -> None:
 
 
 def _with_config_errors(run, args):
-    """Turn a bad --config into a one-line error and exit 2, not a traceback."""
+    """Turn a bad config, baseline or backend into a one-line error and exit 2."""
     try:
         run(args)
-    except ConfigError as exc:
+    except (
+        ConfigError,
+        baseline_file.BaselineError,
+        ratchet.RatchetError,
+        BackendError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)
 
@@ -262,6 +329,15 @@ def main():
             metavar="PATH",
             help="Path to the config JSON file (required; no search, no default)",
         )
+        p.add_argument(
+            "--baseline",
+            default=None,
+            metavar="PATH",
+            help=(
+                "Path to the ratchet baseline file "
+                "(overrides the config file's `baseline`)"
+            ),
+        )
         return p
 
     # --- check ---
@@ -283,6 +359,18 @@ def main():
 
     # --- rules ---
     sub.add_parser("rules", help="List all available lint rules")
+
+    # --- baseline ---
+    baseline_cmd = sub.add_parser(
+        "baseline", help="Record or inspect the ratchet's violation total"
+    )
+    baseline_sub = baseline_cmd.add_subparsers(dest="baseline_command", required=True)
+    add_rule_flags(
+        baseline_sub.add_parser("update", help="Lint the index and record the total")
+    )
+    add_rule_flags(
+        baseline_sub.add_parser("show", help="Print the recorded and current totals")
+    )
 
     # --- schema ---
     sub.add_parser("schema", help="Print JSON schema for check/rules output")
@@ -307,6 +395,13 @@ def main():
         _with_config_errors(_run_precommit, args)
     elif args.command == "rules":
         _run_rules(args)
+    elif args.command == "baseline":
+        run = (
+            _run_baseline_update
+            if args.baseline_command == "update"
+            else _run_baseline_show
+        )
+        _with_config_errors(run, args)
     elif args.command == "schema":
         _run_schema(args)
     elif args.command == "hook-check":
