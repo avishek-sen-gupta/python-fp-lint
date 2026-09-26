@@ -14,55 +14,60 @@ from dataclasses import dataclass
 
 from python_fp_lint import baseline
 from python_fp_lint.lint_gate import LintGate
-from python_fp_lint.precommit import (
-    git_output,
-    materialize_staged,
-    remap_to_repo_relative,
-)
+from python_fp_lint.precommit import git_output, remap_to_repo_relative
 from python_fp_lint.result import LintResult
 
 
-def index_python_files(repo_root: str) -> list[str]:
-    """Repo-relative .py paths in the index -- the tree a commit would record.
+def materialize_index(repo_root: str, dest: str) -> None:
+    """Write the whole index -- every tracked file -- into dest.
 
-    Untracked files are deliberately absent: they are not part of the commit,
-    so counting them would block a commit over code that is not being made.
+    One `git checkout-index -a`, not one `git show` per file, and git writes
+    the blobs itself, so a non-UTF-8 source file never passes through a
+    decode. Untracked files are deliberately absent: they are not part of the
+    commit, so counting them would block a commit over code that is not being
+    made.
     """
-    out = git_output(repo_root, "ls-files", "-z")
-    return [p for p in out.split("\0") if p.endswith(".py")]
+    os.makedirs(dest, exist_ok=True)
+    # --prefix is a literal string prepended to each path, so it needs its
+    # trailing separator; os.path.join with "" supplies one portably.
+    git_output(repo_root, "checkout-index", "-a", f"--prefix={os.path.join(dest, '')}")
 
 
-def unstaged_modified(repo_root: str) -> set[str]:
-    """Repo-relative paths whose worktree content differs from the index.
-
-    Includes worktree deletions, whose index content is still committable.
-    """
-    out = git_output(repo_root, "diff", "--name-only", "-z")
-    return {p for p in out.split("\0") if p}
+def _python_files_under(root: str) -> list[str]:
+    """Root-relative .py paths under root, sorted."""
+    return sorted(
+        os.path.relpath(os.path.join(dirpath, name), root)
+        for dirpath, _dirnames, filenames in os.walk(root)
+        for name in filenames
+        if name.endswith(".py")
+    )
 
 
 def evaluate_index(repo_root: str, workdir: str, gate: LintGate) -> LintResult:
     """Lint the committable content of every tracked .py file.
 
-    A file whose worktree copy matches its index entry is linted in place;
-    only the dirty ones are materialized from `git show :path`. That keeps
-    this to a handful of git calls rather than one per file, which matters on
-    the large codebases the ratchet exists for.
+    The whole index is materialized into `workdir` and the `.py` files under
+    that tree are what gets linted. The total is therefore a function of the
+    index by construction: an unstaged worktree edit cannot move it, and CI on
+    a fresh checkout agrees with a developer's dirty tree.
+
+    The older, cheaper split -- lint clean files in place, materialize only
+    the dirty ones -- is deliberately gone, and with it the "handful of git
+    calls rather than one per file" optimisation. That split materialized
+    `.py` files alone, so Ruff found no `pyproject.toml` or `ruff.toml` above
+    them and its directory-scoped settings (`per-file-ignores`,
+    `extend-exclude`) applied to a file only while its worktree copy happened
+    to be clean. `checkout-index -a` brings the config files along.
     """
-    tracked = gate.filter_excluded(index_python_files(repo_root), repo_root)
+    materialize_index(repo_root, workdir)
+    tracked = gate.filter_excluded(_python_files_under(workdir), repo_root)
     if not tracked:
         return LintResult(passed=True, violations=[])
 
-    dirty = unstaged_modified(repo_root)
-    mapping = materialize_staged(repo_root, [p for p in tracked if p in dirty], workdir)
-    mapping.update(
-        {
-            os.path.abspath(os.path.join(repo_root, p)): p
-            for p in tracked
-            if p not in dirty
-        }
-    )
-
+    # Exclusions were applied to the repo-relative names above, and the
+    # mapping puts them back on the violations: once written under workdir a
+    # file no longer sits at a path the project's globs describe.
+    mapping = {os.path.abspath(os.path.join(workdir, p)): p for p in tracked}
     result = gate.evaluate(sorted(mapping), repo_root)
     return remap_to_repo_relative(result, mapping)
 
@@ -90,6 +95,11 @@ class Verdict:
     @property
     def regressed(self) -> bool:
         return self.total > self.recorded
+
+    @property
+    def dropped(self) -> bool:
+        """The total fell. `dropped and not tightened` means --no-tighten."""
+        return self.total < self.recorded
 
 
 def apply(

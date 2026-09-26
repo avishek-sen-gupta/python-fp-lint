@@ -47,32 +47,60 @@ def _total(repo):
     return len(ratchet.total_violations(str(repo), _gate()).violations)
 
 
-class TestIndexEnumeration:
-    def test_lists_tracked_python_files(self, repo):
-        (repo / "notes.txt").write_text("hi\n")
-        _git(repo, "add", "notes.txt")
-        _git(repo, "commit", "-qm", "notes")
-        assert ratchet.index_python_files(str(repo)) == ["mod.py"]
+class TestMaterializedIndex:
+    """What `git checkout-index -a` puts in the temp tree is what gets linted.
 
-    def test_untracked_file_is_not_in_the_index(self, repo):
+    These replace the old clean/dirty enumeration tests: the total is now a
+    function of the index by construction rather than by a per-file choice
+    between the worktree copy and `git show :path`.
+    """
+
+    def _materialize(self, repo, tmp_path):
+        dest = tmp_path / "idx"
+        ratchet.materialize_index(str(repo), str(dest))
+        return dest
+
+    def test_writes_tracked_python_files(self, repo, tmp_path):
+        dest = self._materialize(repo, tmp_path)
+        assert ratchet._python_files_under(str(dest)) == ["mod.py"]
+
+    def test_writes_non_python_files_too(self, repo, tmp_path):
+        """C1: Ruff's directory-scoped settings need their config file here."""
+        (repo / "pyproject.toml").write_text("[tool.ruff]\n")
+        _git(repo, "add", "pyproject.toml")
+        dest = self._materialize(repo, tmp_path)
+        assert (dest / "pyproject.toml").read_text() == "[tool.ruff]\n"
+
+    def test_untracked_file_is_not_materialized(self, repo, tmp_path):
         (repo / "new.py").write_text(CLEAN)
-        assert ratchet.index_python_files(str(repo)) == ["mod.py"]
+        dest = self._materialize(repo, tmp_path)
+        assert ratchet._python_files_under(str(dest)) == ["mod.py"]
 
-    def test_staged_addition_is_in_the_index(self, repo):
+    def test_staged_addition_is_materialized(self, repo, tmp_path):
         (repo / "new.py").write_text(CLEAN)
         _git(repo, "add", "new.py")
-        assert sorted(ratchet.index_python_files(str(repo))) == ["mod.py", "new.py"]
+        dest = self._materialize(repo, tmp_path)
+        assert ratchet._python_files_under(str(dest)) == ["mod.py", "new.py"]
 
-    def test_staged_deletion_leaves_the_index(self, repo):
+    def test_staged_deletion_is_not_materialized(self, repo, tmp_path):
         _git(repo, "rm", "-q", "mod.py")
-        assert ratchet.index_python_files(str(repo)) == []
+        dest = self._materialize(repo, tmp_path)
+        assert ratchet._python_files_under(str(dest)) == []
 
-    def test_unstaged_edit_is_reported_dirty(self, repo):
+    def test_index_content_wins_over_an_unstaged_edit(self, repo, tmp_path):
         (repo / "mod.py").write_text(CLEAN + "y = 2\n")
-        assert ratchet.unstaged_modified(str(repo)) == {"mod.py"}
+        dest = self._materialize(repo, tmp_path)
+        assert (dest / "mod.py").read_text() == CLEAN
 
-    def test_clean_worktree_has_nothing_dirty(self, repo):
-        assert ratchet.unstaged_modified(str(repo)) == set()
+    def test_nested_paths_keep_their_shape(self, repo, tmp_path):
+        (repo / "pkg").mkdir()
+        (repo / "pkg" / "deep.py").write_text(CLEAN)
+        _git(repo, "add", "pkg/deep.py")
+        dest = self._materialize(repo, tmp_path)
+        assert ratchet._python_files_under(str(dest)) == [
+            "mod.py",
+            os.path.join("pkg", "deep.py"),
+        ]
 
 
 class TestTotal:
@@ -116,12 +144,80 @@ class TestTotal:
         assert _total(tmp_path) == 0
 
 
+class TestRuffDirectoryConfig:
+    """C1: the total must be a function of the committed content alone.
+
+    Ruff resolves `per-file-ignores` and friends from the closest
+    `pyproject.toml` above each file. Materializing only `.py` files left
+    those settings behind, so a file's contribution depended on whether its
+    worktree copy happened to match the index.
+    """
+
+    LEGACY = "import os\nimport sys\n\n\ndef f(x):\n    return x == None\n"
+
+    def _repo_with_per_file_ignores(self, repo):
+        (repo / "pyproject.toml").write_text(
+            '[tool.ruff.lint.per-file-ignores]\n"legacy/**" = ["F401", "E711"]\n'
+        )
+        (repo / "legacy").mkdir()
+        (repo / "legacy" / "mod.py").write_text(self.LEGACY)
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "legacy")
+        return repo
+
+    def test_per_file_ignores_apply_to_a_clean_worktree(self, repo):
+        repo = self._repo_with_per_file_ignores(repo)
+        assert _total(repo) == 0
+
+    def test_per_file_ignores_apply_to_a_dirty_worktree(self, repo):
+        """The reviewer's reproduction: the index is unchanged, so is the total."""
+        repo = self._repo_with_per_file_ignores(repo)
+        clean = _total(repo)
+        (repo / "legacy" / "mod.py").write_text(self.LEGACY + "\n")  # dirty, unstaged
+        assert _total(repo) == clean == 0
+
+    def test_the_same_file_outside_the_ignored_directory_still_counts(self, repo):
+        repo = self._repo_with_per_file_ignores(repo)
+        (repo / "current.py").write_text(self.LEGACY)
+        _git(repo, "add", "current.py")
+        assert _total(repo) > 0
+
+
 class TestUndecodableFiles:
-    def test_latin1_file_does_not_crash_the_run(self, repo):
-        """Review Focus 4: legacy repos have non-UTF-8 files."""
-        (repo / "legacy.py").write_bytes(b"# caf\xe9\nx = 1\n")
+    """Review Focus 4: legacy repos have non-UTF-8 files.
+
+    Such a file contributes exactly one violation -- Ruff's E902, "stream did
+    not contain valid UTF-8" -- and must never abort the run.
+    """
+
+    LATIN1 = b'# caf\xe9\nd = {}\nd["k"] = 1\n'
+
+    def _reported(self, repo):
+        violations = ratchet.total_violations(str(repo), _gate()).violations
+        return [(v.rule, v.file) for v in violations]
+
+    def test_latin1_file_staged_clean(self, repo):
+        (repo / "legacy.py").write_bytes(self.LATIN1)
         _git(repo, "add", "legacy.py")
-        _total(repo)  # must not raise
+        assert self._reported(repo) == [("E902", "legacy.py")]
+
+    def test_latin1_file_with_an_unstaged_edit(self, repo):
+        """C2: the materialization path, which `git show`'s decode used to kill.
+
+        The worktree copy is clean ASCII and would contribute nothing, so the
+        one E902 also proves the index content is what was counted.
+        """
+        (repo / "legacy.py").write_bytes(self.LATIN1)
+        _git(repo, "add", "legacy.py")
+        (repo / "legacy.py").write_bytes(b"x = 1\n")  # re-encoded, but not staged
+        assert self._reported(repo) == [("E902", "legacy.py")]
+
+    def test_latin1_bytes_survive_materialization(self, repo, tmp_path):
+        (repo / "legacy.py").write_bytes(self.LATIN1)
+        _git(repo, "add", "legacy.py")
+        dest = tmp_path / "idx"
+        ratchet.materialize_index(str(repo), str(dest))
+        assert (dest / "legacy.py").read_bytes() == self.LATIN1
 
 
 class TestChunkedRepo:
