@@ -26,6 +26,9 @@ repos:
         language: script
         pass_filenames: false
         always_run: true
+        # always_run: true means no file filter can skip this hook, so without
+        # an explicit stage it scans the same staged diff again at commit-msg.
+        stages: [pre-commit]
       - id: terminology-commit-msg
         name: Terminology Guard (commit message)
         entry: precommit-scripts/check-commit-msg
