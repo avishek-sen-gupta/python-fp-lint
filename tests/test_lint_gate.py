@@ -3,7 +3,9 @@
 
 import os
 import shutil
+
 import pytest
+from gitenv import clean_env
 
 from python_fp_lint import lint_gate
 from python_fp_lint.lint_gate import LintGate
@@ -148,7 +150,7 @@ class TestAstGrepIgnoresGitignoredRulesDir:
 
         repo = tmp_path / "consumer_repo"
         repo.mkdir()
-        _subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        _subprocess.run(["git", "init", "-q"], cwd=repo, check=True, env=clean_env())
         (repo / ".gitignore").write_text("ignored_deps/\n")
 
         # Rules live under a path this repo's own .gitignore excludes, with a
@@ -214,7 +216,9 @@ def git_tree(tmp_path):
     """A git repo with tracked, untracked, and gitignored Python files."""
     import subprocess
 
-    subprocess.run(["git", "init", "-q", "--template=", str(tmp_path)], check=True)
+    subprocess.run(
+        ["git", "init", "-q", "--template=", str(tmp_path)], check=True, env=clean_env()
+    )
     (tmp_path / ".gitignore").write_text(".venv/\nbuild/\n")
     for rel in (
         "src/tracked.py",
@@ -225,7 +229,11 @@ def git_tree(tmp_path):
         path = tmp_path / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("x = 1\n")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "src/tracked.py"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "src/tracked.py"],
+        check=True,
+        env=clean_env(),
+    )
     return tmp_path
 
 

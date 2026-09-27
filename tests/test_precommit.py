@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 import pytest
+from gitenv import clean_env
 
 from python_fp_lint.precommit import materialize_staged, staged_python_files
 
@@ -16,7 +17,12 @@ CONFIG = os.path.join(REPO_ROOT, "config.example.json")
 
 def _git(repo, *args):
     return subprocess.run(
-        ["git", *args], cwd=repo, capture_output=True, text=True, check=True
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=clean_env(),
     ).stdout
 
 
@@ -52,7 +58,7 @@ def _run_precommit(repo, *args):
         cwd=repo,
         capture_output=True,
         text=True,
-        env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        env=clean_env(PYTHONPATH=REPO_ROOT),
     )
 
 

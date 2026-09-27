@@ -8,6 +8,7 @@ import sys
 
 import pytest
 import yaml
+from gitenv import clean_env
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 INSTALL = os.path.join(REPO_ROOT, "install-precommit-lint.sh")
@@ -29,7 +30,9 @@ def bin_dir(tmp_path_factory):
 
 @pytest.fixture
 def repo(tmp_path):
-    subprocess.run(["git", "init", "-q", "--template=", str(tmp_path)], check=True)
+    subprocess.run(
+        ["git", "init", "-q", "--template=", str(tmp_path)], check=True, env=clean_env()
+    )
     return tmp_path
 
 
@@ -39,7 +42,7 @@ def _sh(script, repo, bin_dir):
         cwd=repo,
         capture_output=True,
         text=True,
-        env={**os.environ, "PATH": f"{bin_dir}:/usr/bin:/bin"},
+        env=clean_env(PATH=f"{bin_dir}:/usr/bin:/bin"),
     )
 
 

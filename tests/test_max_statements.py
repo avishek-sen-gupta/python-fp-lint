@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 import pytest
+from gitenv import clean_env
 
 from python_fp_lint.lint_gate import (
     _DEFAULT_MAX_STATEMENTS,
@@ -48,7 +49,7 @@ def _run(*args, cwd=REPO_ROOT):
         capture_output=True,
         text=True,
         cwd=cwd,
-        env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        env=clean_env(PYTHONPATH=REPO_ROOT),
     )
 
 
@@ -176,7 +177,11 @@ class TestEntryPoints:
     def _repo(self, tmp_path):
         def git(*args):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, capture_output=True, check=True
+                ["git", *args],
+                cwd=tmp_path,
+                capture_output=True,
+                check=True,
+                env=clean_env(),
             )
 
         git("init", "-q", "--template=")

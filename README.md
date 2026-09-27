@@ -514,8 +514,16 @@ chmod +x .git/hooks/pre-commit
 
 ### This repo's own pre-commit hook
 
-For contributors to python-fp-lint itself, the local hook runs Talisman (secret detection), Black
-(auto-format and re-stage), and the full pytest suite — all via `uv run`.
+For contributors to python-fp-lint itself, the local hook runs Talisman (secret detection) and
+the terminology guards; the test suite runs in CI rather than at commit. Every hook in it
+declares its `stages:` explicitly, because one of them is a `commit-msg` hook -- which is
+exactly the condition that makes an omitted `stages:` double-run.
+
+If you add a hook that runs `pytest` here, note that the suite is written to survive it: git
+exports `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` to its hooks, those override a
+subprocess `cwd=`, and the tests both create repos and stage files. `tests/conftest.py` strips
+them for the session and `tests/gitenv.py` explains why. Production code is deliberately left
+reading them -- that is how the gate sees the staged index.
 
 ## Pyright gate
 

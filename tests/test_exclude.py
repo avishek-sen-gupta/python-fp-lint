@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 import pytest
+from gitenv import clean_env
 
 from python_fp_lint.hook_check import check_tool_event
 from python_fp_lint.lint_gate import LintGate, is_excluded
@@ -34,7 +35,7 @@ def _run(*args, cwd=REPO_ROOT):
         capture_output=True,
         text=True,
         cwd=cwd,
-        env={**os.environ, "PYTHONPATH": REPO_ROOT},
+        env=clean_env(PYTHONPATH=REPO_ROOT),
     )
 
 
@@ -149,7 +150,12 @@ def repo(tmp_path):
 
     def git(*args):
         subprocess.run(
-            ["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True
+            ["git", *args],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=clean_env(),
         )
 
     git("init", "-q", "--template=")
@@ -164,7 +170,7 @@ class TestExcludeInPrecommit:
     @staticmethod
     def _stage(repo, relpath):
         _dirty(repo, relpath)
-        subprocess.run(["git", "add", relpath], cwd=repo, check=True)
+        subprocess.run(["git", "add", relpath], cwd=repo, check=True, env=clean_env())
 
     def _run_precommit(self, repo, config):
         return _run("--format", "json", "precommit", "--config", config, cwd=str(repo))

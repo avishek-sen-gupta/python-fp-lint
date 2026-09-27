@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 import pytest
+from gitenv import clean_env
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 # `check` and `precommit` require --config; the shipped example enables
@@ -205,7 +206,11 @@ class TestBaselineCommand:
     def _repo(self, tmp_path):
         def git(*args):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True, capture_output=True
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                env=clean_env(),
             )
 
         git("init", "-q", "--template=")
@@ -222,7 +227,7 @@ class TestBaselineCommand:
             cwd=repo,
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+            env=clean_env(PYTHONPATH=REPO_ROOT),
         )
 
     def test_update_creates_the_file(self, tmp_path):
@@ -343,7 +348,11 @@ class TestPrecommitRatchet:
     def _repo(self, tmp_path, committed, baseline_total):
         def git(*args):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True, capture_output=True
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                env=clean_env(),
             )
 
         git("init", "-q", "--template=")
@@ -378,12 +387,17 @@ class TestPrecommitRatchet:
             cwd=repo,
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+            env=clean_env(PYTHONPATH=REPO_ROOT),
         )
 
     def _git_out(self, repo, *args):
         return subprocess.run(
-            ["git", *args], cwd=repo, capture_output=True, text=True, check=True
+            ["git", *args],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=clean_env(),
         ).stdout
 
     def test_equal_total_passes(self, tmp_path):
@@ -394,7 +408,7 @@ class TestPrecommitRatchet:
     def test_rise_fails_and_leaves_the_baseline_alone(self, tmp_path):
         repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
         (repo / "mod.py").write_text(self.DIRTIER)
-        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True)
+        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True, env=clean_env())
         result = self._run(repo)
         assert result.returncode == 1
         assert json.loads(result.stdout)["ratchet"] == {
@@ -407,7 +421,7 @@ class TestPrecommitRatchet:
     def test_fall_tightens_and_stages(self, tmp_path):
         repo = self._repo(tmp_path, self.DIRTIER, baseline_total=2)
         (repo / "mod.py").write_text(self.DIRTY)
-        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True)
+        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True, env=clean_env())
         result = self._run(repo)
         assert result.returncode == 0
         assert json.loads((repo / "fp-baseline.json").read_text()) == {"total": 1}
@@ -418,7 +432,7 @@ class TestPrecommitRatchet:
     def test_no_tighten_passes_without_writing(self, tmp_path):
         repo = self._repo(tmp_path, self.DIRTIER, baseline_total=2)
         (repo / "mod.py").write_text(self.DIRTY)
-        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True)
+        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True, env=clean_env())
         result = self._run(repo, "--no-tighten")
         assert result.returncode == 0
         assert json.loads((repo / "fp-baseline.json").read_text()) == {"total": 2}
@@ -427,13 +441,15 @@ class TestPrecommitRatchet:
         """The whole point: a dirty legacy file can still be committed."""
         repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
         (repo / "mod.py").write_text(self.DIRTY + "# a comment\n")
-        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True)
+        subprocess.run(["git", "add", "mod.py"], cwd=repo, check=True, env=clean_env())
         assert self._run(repo).returncode == 0
 
     def test_text_output_names_only_staged_violations(self, tmp_path):
         repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
         (repo / "other.py").write_text(self.DIRTIER)
-        subprocess.run(["git", "add", "other.py"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "add", "other.py"], cwd=repo, check=True, env=clean_env()
+        )
         result = subprocess.run(
             [
                 sys.executable,
@@ -446,7 +462,7 @@ class TestPrecommitRatchet:
             cwd=repo,
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+            env=clean_env(PYTHONPATH=REPO_ROOT),
         )
         assert result.returncode == 1
         assert "other.py" in result.stdout
@@ -468,7 +484,7 @@ class TestPrecommitRatchet:
             cwd=repo,
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+            env=clean_env(PYTHONPATH=REPO_ROOT),
         )
 
     def test_no_tighten_on_a_fall_says_so(self, tmp_path):
@@ -505,7 +521,7 @@ class TestPrecommitRatchet:
             cwd=repo,
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+            env=clean_env(PYTHONPATH=REPO_ROOT),
         )
         assert result.returncode == 1
         assert "… and 1 more (run `check` for the full list)" in result.stdout
@@ -514,7 +530,9 @@ class TestPrecommitRatchet:
         """I3: violation_count is the repo; the array has its own count."""
         repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
         (repo / "other.py").write_text(self.DIRTIER)
-        subprocess.run(["git", "add", "other.py"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "add", "other.py"], cwd=repo, check=True, env=clean_env()
+        )
         data = json.loads(self._run(repo).stdout)
         assert data["violation_count"] == 3
         assert data["reported_violation_count"] == 2
@@ -529,7 +547,9 @@ class TestPrecommitRatchet:
         """
         repo = self._repo(tmp_path, self.DIRTIER, baseline_total=1)
         (repo / "clean.py").write_text("x = 1\n")
-        subprocess.run(["git", "add", "clean.py"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "add", "clean.py"], cwd=repo, check=True, env=clean_env()
+        )
         result = self._run_text(repo, "--no-tighten")
         assert result.returncode == 1
         assert "ratchet: 1 → 2 (+1)" in result.stdout
@@ -548,9 +568,16 @@ class TestPrecommitRatchet:
         (repo / "keep" / "a.py").write_text("y = 2\n")
         (repo / "away").mkdir()
         (repo / "away" / "b.py").write_text(self.DIRTIER)
-        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
-        subprocess.run(["git", "commit", "-qm", "two trees"], cwd=repo, check=True)
-        subprocess.run(["git", "sparse-checkout", "set", "keep"], cwd=repo, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, env=clean_env())
+        subprocess.run(
+            ["git", "commit", "-qm", "two trees"], cwd=repo, check=True, env=clean_env()
+        )
+        subprocess.run(
+            ["git", "sparse-checkout", "set", "keep"],
+            cwd=repo,
+            check=True,
+            env=clean_env(),
+        )
         assert not (repo / "away" / "b.py").exists()  # skip-worktree
 
         result = self._run(repo)
@@ -566,11 +593,16 @@ class TestPrecommitRatchet:
             capture_output=True,
             text=True,
             check=True,
+            env=clean_env(),
         ).stdout.strip()
 
         def git(*args, check=True):
             return subprocess.run(
-                ["git", *args], cwd=repo, check=check, capture_output=True
+                ["git", *args],
+                cwd=repo,
+                check=check,
+                capture_output=True,
+                env=clean_env(),
             )
 
         git("checkout", "-q", "-b", "other")
@@ -600,7 +632,7 @@ class TestSchemaCommand:
             [sys.executable, "-m", "python_fp_lint", "schema"],
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+            env=clean_env(PYTHONPATH=REPO_ROOT),
         )
         assert result.returncode == 0
         return json.loads(result.stdout)
@@ -638,7 +670,7 @@ class TestBaselineFlagScope:
             ],
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+            env=clean_env(PYTHONPATH=REPO_ROOT),
         )
         assert result.returncode == 2
         assert "unrecognized arguments: --baseline" in result.stderr
@@ -653,7 +685,7 @@ class TestBaselineFlagScope:
                 [sys.executable, "-m", "python_fp_lint", *argv],
                 capture_output=True,
                 text=True,
-                env={**os.environ, "PYTHONPATH": REPO_ROOT},
+                env=clean_env(PYTHONPATH=REPO_ROOT),
             )
             assert "--baseline" in result.stdout, argv
 
@@ -662,7 +694,11 @@ class TestPrecommitWithoutBaselineIsUnchanged:
     def test_any_violation_in_a_staged_file_still_blocks(self, tmp_path):
         def git(*args):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True, capture_output=True
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                env=clean_env(),
             )
 
         git("init", "-q", "--template=")
@@ -682,7 +718,7 @@ class TestPrecommitWithoutBaselineIsUnchanged:
             cwd=tmp_path,
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONPATH": REPO_ROOT},
+            env=clean_env(PYTHONPATH=REPO_ROOT),
         )
         assert result.returncode == 1
 
@@ -701,7 +737,11 @@ class TestPrecommitWithoutBaselineIsUnchanged:
 
         def git(*args):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True, capture_output=True
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                env=clean_env(),
             )
 
         git("init", "-q", "--template=")

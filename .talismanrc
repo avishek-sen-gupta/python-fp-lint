@@ -36,4 +36,10 @@ fileignoreconfig:
   checksum: 7a10002a1f49e0636d3735121964f16195e8b8dcaa6d1523b2d6dba998f3cf81
 - filename: tests/test_max_statements.py
   checksum: 80b13cc193390214b64830cd5eb568159a65b2a9753922ccc0cadf17d46e8de8
+- filename: tests/gitenv.py
+  checksum: a5a055283eea1583fe57f0d158de80694bdf0ae4bb4485473f6a0b50baa674e9
+- filename: tests/conftest.py
+  checksum: d95adcdcea071b5df2ac4baf09e0e456c492bc22bf00c65e5b0bc8049317aebd
+- filename: tests/test_fixture_isolation.py
+  checksum: 560e8d303b24fbb201d38897cece323b50a483ef3811ddb7d26d6dfa40174eb9
 version: "1.0"

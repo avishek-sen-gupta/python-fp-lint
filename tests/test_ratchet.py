@@ -5,6 +5,7 @@ import os
 import subprocess
 
 import pytest
+from gitenv import clean_env
 
 from python_fp_lint import baseline, lint_gate, ratchet
 from python_fp_lint.lint_gate import LintGate
@@ -19,7 +20,12 @@ CLEAN = "x = 1\n"
 
 def _git(repo, *args):
     return subprocess.run(
-        ["git", *args], cwd=repo, capture_output=True, text=True, check=True
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=clean_env(),
     ).stdout
 
 
@@ -190,7 +196,9 @@ class TestIncompleteMaterialization:
         _git(repo, "checkout", "-q", ours)
         (repo / "conflict.py").write_text("x = 2\n")
         _git(repo, "commit", "-qam", "ours")
-        subprocess.run(["git", "merge", "other"], cwd=repo, capture_output=True)
+        subprocess.run(
+            ["git", "merge", "other"], cwd=repo, capture_output=True, env=clean_env()
+        )
         assert "UU" in _git(repo, "status", "--short")
 
         with pytest.raises(ratchet.RatchetError) as exc:
