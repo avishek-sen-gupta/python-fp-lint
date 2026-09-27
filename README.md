@@ -459,10 +459,13 @@ repos:
 ```
 
 The `python-fp-lint` hook declares `stages: [pre-commit]`, so it runs once per commit even when
-the repo also installs a `commit-msg` hook. Your own hooks don't get that for free: pre-commit
-runs a hook with no `stages:` at *every* installed stage, so with a `commit-msg` hook installed,
-each of them runs twice per commit (`always_run` hooks in full, the rest as "no files to check"
-noise). Set this at the top of `.pre-commit-config.yaml` to stop that:
+the repo also installs a `commit-msg` hook. Every hook these installers write carries it too --
+Black and Pyright get it from the installer, since their own manifests declare no stage.
+
+Your own hooks don't get that for free: pre-commit runs a hook with no `stages:` at *every*
+installed stage, so with a `commit-msg` hook installed, each of them runs twice per commit
+(`always_run` hooks in full, the rest as "no files to check" noise). Set this at the top of
+`.pre-commit-config.yaml` to stop that:
 
 ```yaml
 default_stages: [pre-commit]
@@ -536,10 +539,13 @@ It writes a `pyrightconfig.json` at the repo root and adds one hook to
   rev: v1.1.414
   hooks:
     - id: pyright
+      stages: [pre-commit]
 ```
 
-The hook carries no `stages:` key, so it runs at pre-commit's default commit stage: **it
-blocks.** The `rev` is pinned to a real tag so the wiring works offline, then
+The hook runs at the commit stage, and only there: **it blocks.** `stages:` is explicit
+rather than left to pre-commit's default, because a hook that omits it runs at *every*
+installed stage -- so alongside a `commit-msg` hook, Pyright would type-check twice per
+commit. The `rev` is pinned to a real tag so the wiring works offline, then
 `pre-commit autoupdate --repo <url>` moves it to the latest release. No `--bleeding-edge`
 here, unlike the lint installer -- that one tracks this project's `main`, while
 pyright-python ships tags.
@@ -602,7 +608,12 @@ cleanly:
   rev: 26.5.1
   hooks:
     - id: black
+      stages: [pre-commit]
 ```
+
+`stages:` is explicit for the same reason it is on the Pyright hook: without it Black would
+reformat the same staged files a second time in any repo that also installs a `commit-msg`
+hook.
 
 Two things set it apart from the other two gates.
 

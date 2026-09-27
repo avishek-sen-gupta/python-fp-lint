@@ -32,7 +32,13 @@ require_git_root "$PROJECT_DIR"
 # Textual, not a YAML round-trip, so the consumer's comments and key
 # order survive -- see installer/precommit_yaml.py.
 echo "Wiring Black into .pre-commit-config.yaml..."
-wire_hooks "$CONFIG_YAML" "$REPO_URL" "$REV" '[{"id": "black"}]'
+# stages is explicit rather than left to pre-commit's default. A hook that
+# omits it runs at *every* installed stage, so in a repo that also installs a
+# commit-msg hook Black would reformat the same staged files a second time per
+# commit. Scoped to this hook, not set as the consumer's default_stages: their
+# other hooks are not ours to re-stage.
+wire_hooks "$CONFIG_YAML" "$REPO_URL" "$REV" \
+  '[{"id": "black", "stages": ["pre-commit"]}]'
 
 # --- activate, on the latest release ---
 # No --bleeding-edge here, unlike the lint installer: that one tracks this

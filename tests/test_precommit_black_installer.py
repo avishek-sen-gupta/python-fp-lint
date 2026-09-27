@@ -68,8 +68,10 @@ class TestFreshRepo:
         _install(repo, bin_dir)
         (hook,) = _block(repo)["hooks"]
         assert hook["id"] == "black"
-        # No `stages:` key at all -- pre-commit's default is the commit stage.
-        assert "stages" not in hook
+        # Explicit, not left to pre-commit's default: a hook with no `stages:`
+        # runs at *every* installed stage, so in a repo that also installs a
+        # commit-msg hook Black would reformat a second time per commit.
+        assert hook["stages"] == ["pre-commit"]
 
     def test_pins_a_real_release_tag(self, repo, bin_dir):
         """Black tags carry no `v` prefix, unlike pyright-python's."""
@@ -141,6 +143,64 @@ class TestExistingPreCommitConfig:
         assert BLACK_URL in config.read_text()
         _uninstall(repo, bin_dir)
         assert config.read_text() == self.ORIGINAL
+
+
+class TestBackfillsTheStageOnAnOlderWiring:
+    """A repo wired before `stages:` was written must get it on a re-run.
+
+    Otherwise the double-run this fixes only ever goes away for repos wired
+    from scratch, and every existing consumer stays broken while the installer
+    reports "already wired, skipping".
+    """
+
+    def _wired(self, hook_lines):
+        return (
+            "repos:\n"
+            f"  - repo: {BLACK_URL}\n"
+            "    rev: 26.5.1\n"
+            "    hooks:\n"
+            f"{hook_lines}"
+        )
+
+    def test_adds_the_missing_stage(self, repo, bin_dir):
+        config = repo / ".pre-commit-config.yaml"
+        config.write_text(self._wired("      - id: black\n"))
+        _install(repo, bin_dir)
+        assert _block(repo)["hooks"][0]["stages"] == ["pre-commit"]
+
+    def test_keeps_a_stage_the_consumer_chose(self, repo, bin_dir):
+        """Backfilling an absent key is not licence to overwrite a present one."""
+        config = repo / ".pre-commit-config.yaml"
+        config.write_text(self._wired("      - id: black\n        stages: [manual]\n"))
+        _install(repo, bin_dir)
+        assert _block(repo)["hooks"][0]["stages"] == ["manual"]
+
+    def test_leaves_the_consumers_own_hooks_alone(self, repo, bin_dir):
+        """Only our block is reconciled; their other hooks are their business."""
+        config = repo / ".pre-commit-config.yaml"
+        config.write_text(
+            "repos:\n"
+            "  - repo: https://github.com/pycqa/isort\n"
+            "    rev: 5.13.2\n"
+            "    hooks:\n"
+            "      - id: isort\n"
+            f"  - repo: {BLACK_URL}\n"
+            "    rev: 26.5.1\n"
+            "    hooks:\n"
+            "      - id: black\n"
+        )
+        _install(repo, bin_dir)
+        parsed = yaml.safe_load(config.read_text())
+        (isort,) = [r for r in parsed["repos"] if "isort" in r["repo"]]
+        assert "stages" not in isort["hooks"][0]
+
+    def test_re_running_after_the_backfill_changes_nothing(self, repo, bin_dir):
+        config = repo / ".pre-commit-config.yaml"
+        config.write_text(self._wired("      - id: black\n"))
+        _install(repo, bin_dir)
+        backfilled = config.read_text()
+        _install(repo, bin_dir)
+        assert config.read_text() == backfilled
 
 
 class TestCoexistsWithTheOtherGates:

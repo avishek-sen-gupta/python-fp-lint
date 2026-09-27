@@ -3,7 +3,8 @@
 # Run from the root of the project you want to gate.
 # Requires: python3, and `pre-commit` on PATH for the final install step.
 #
-# The hook is a blocking one: it runs at the commit stage, and strict mode on
+# The hook is a blocking one: it runs at the commit stage (and only there --
+# the wiring says so explicitly), and strict mode on
 # a codebase that has never been type-checked will have plenty to say. There
 # is no ratchet for Pyright -- its findings are not part of python-fp-lint's
 # violation total -- so a repo that cannot pass strict cannot commit until it
@@ -42,7 +43,13 @@ fi
 # Textual, not a YAML round-trip, so the consumer's comments and key
 # order survive -- see installer/precommit_yaml.py.
 echo "Wiring Pyright into .pre-commit-config.yaml..."
-wire_hooks "$CONFIG_YAML" "$REPO_URL" "$REV" '[{"id": "pyright"}]'
+# stages is explicit rather than left to pre-commit's default. A hook that
+# omits it runs at *every* installed stage, so in a repo that also installs a
+# commit-msg hook Pyright would type-check twice per commit. Scoped to this
+# hook, not set as the consumer's default_stages: their other hooks are not
+# ours to re-stage.
+wire_hooks "$CONFIG_YAML" "$REPO_URL" "$REV" \
+  '[{"id": "pyright", "stages": ["pre-commit"]}]'
 
 # --- activate, on the latest release ---
 # No --bleeding-edge here, unlike the lint installer: that one tracks this

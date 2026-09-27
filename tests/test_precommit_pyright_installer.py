@@ -80,9 +80,11 @@ class TestFreshRepo:
         block = _block(repo)
         (hook,) = block["hooks"]
         assert hook["id"] == "pyright"
-        # No `stages:` key at all -- pre-commit's default is the commit stage,
-        # which is what makes this gate block rather than wait to be asked.
-        assert "stages" not in hook
+        # The commit stage, and only that one: it blocks rather than waiting to
+        # be asked, but a hook with no `stages:` runs at every installed stage,
+        # so Pyright would type-check twice per commit alongside a commit-msg
+        # hook.
+        assert hook["stages"] == ["pre-commit"]
 
     def test_pins_a_real_release_tag(self, repo, bin_dir):
         _install(repo, bin_dir)

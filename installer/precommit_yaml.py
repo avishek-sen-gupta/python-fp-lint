@@ -11,10 +11,11 @@ Usage:
     precommit_yaml.py insert --config PATH --url URL --rev REV --hooks JSON
     precommit_yaml.py remove --config PATH --url URL
 
-`--hooks` is a JSON list of objects: `{"id": ..., "args": [...]}`, where
-`args` is optional. `insert` is idempotent, and reconciles rather than
-replaces: a block that is already present gains any hook ids it is missing
-and keeps everything else about it untouched.
+`--hooks` is a JSON list of objects: `{"id": ..., "args": [...], "stages":
+[...]}`, where `args` and `stages` are optional. `insert` is idempotent, and
+reconciles rather than replaces: a block that is already present gains any
+hook ids it is missing, and any of those keys we declare that a present hook
+lacks. A key the consumer already wrote is never overwritten.
 """
 
 import argparse
@@ -89,19 +90,92 @@ def content_end(lines: list[str], start: int, indent: int) -> int:
     return end
 
 
+def hook_span(lines: list[str], id_at: int, pad: str) -> int:
+    """Index one past the hook item whose `- id:` line is at `id_at`.
+
+    A hook's own fields are indented deeper than its dash, so the first non-blank
+    line at or left of the dash belongs to the next hook -- or to whatever
+    follows the list.
+    """
+    return next(
+        (
+            i
+            for i in range(id_at + 1, len(lines))
+            if lines[i].strip() and len(lines[i]) - len(lines[i].lstrip()) <= len(pad)
+        ),
+        len(lines),
+    )
+
+
+def absent_fields(lines: list[str], id_at: int, hook: dict) -> list[tuple[str, str]]:
+    """(field, line) for each field we declare that this hook does not already have.
+
+    Each line goes directly under the `- id:` line rather than at the end of the
+    hook, so a trailing comment stays attached to the field it was written for.
+    """
+    pad = _ID.match(lines[id_at]).group(1)
+    body = lines[id_at + 1 : hook_span(lines, id_at, pad)]
+    return [
+        (field, f"{pad}  {field}: [{', '.join(hook[field])}]\n")
+        for field in ("args", "stages")
+        if hook.get(field)
+        and not any(re.match(rf"^\s*{field}:", line) for line in body)
+    ]
+
+
+def backfill_fields(
+    lines: list[str], start: int, indent: int, hooks: list[dict]
+) -> tuple[list[str], list[str]]:
+    """Add fields we declare to a hook that is already present but lacks them.
+
+    Absent fields only. A `stages:` or `args:` the consumer wrote is theirs, and
+    reconciling an existing block is not licence to overwrite it. Without this,
+    a fix to what we declare -- `stages: [pre-commit]`, say -- would only ever
+    reach repos wired from scratch, while every existing consumer kept the old
+    wiring and was told "already wired, skipping".
+    """
+    wanted = {hook["id"]: hook for hook in hooks}
+    # Our own block only: the consumer's other hooks are their business.
+    ids = {
+        i: match.group(2)
+        for i, match in (
+            (j, _ID.match(lines[j]))
+            for j in range(start, content_end(lines, start, indent))
+        )
+        if match is not None and match.group(2) in wanted
+    }
+    extra = {i: absent_fields(lines, i, wanted[hook_id]) for i, hook_id in ids.items()}
+    return (
+        [
+            emitted
+            for i, line in enumerate(lines)
+            for emitted in (line, *(added for _, added in extra.get(i, ())))
+        ],
+        [f"{ids[i]} {field}" for i, fields in extra.items() for field, _ in fields],
+    )
+
+
 def add_missing_hooks(
     lines: list[str], start: int, indent: int, hooks: list[dict]
 ) -> tuple[list[str], list[str]]:
-    """Append whatever hook ids the existing block lacks, in the given order."""
-    end = content_end(lines, start, indent)
-    present = {m.group(2) for m in map(_ID.match, lines[start:end]) if m}
+    """Append whatever hook ids the existing block lacks, in the given order.
+
+    Hooks that are already there keep their place, and gain only the fields we
+    declare and they lack -- see backfill_fields.
+    """
+    reconciled, backfilled = backfill_fields(lines, start, indent, hooks)
+    end = content_end(reconciled, start, indent)
+    present = {m.group(2) for m in map(_ID.match, reconciled[start:end]) if m}
     missing = [hook for hook in hooks if hook["id"] not in present]
     if not missing:
-        return lines, []
-    pads = [m.group(1) for m in map(_ID.match, lines[start:end]) if m]
+        return reconciled, backfilled
+    pads = [m.group(1) for m in map(_ID.match, reconciled[start:end]) if m]
     pad = pads[0] if pads else " " * (indent + 4)
     added = [line for hook in missing for line in hook_lines(pad, hook)]
-    return [*lines[:end], *added, *lines[end:]], [hook["id"] for hook in missing]
+    return [*reconciled[:end], *added, *reconciled[end:]], [
+        *backfilled,
+        *(hook["id"] for hook in missing),
+    ]
 
 
 def list_indent(lines: list[str], repos_at: int) -> int:
