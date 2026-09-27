@@ -1,0 +1,20 @@
+# Talisman (secrets scanner) runs as a pre-commit hook rather than as the bare
+# .git/hooks/pre-commit symlink that talisman's global installer creates. Both
+# want that one path, so whoever writes it last wins: `pre-commit install` moves
+# the symlink to .git/hooks/pre-commit.legacy, and pre-commit still runs that
+# file and ORs its exit code into the result -- but talisman derives its hook
+# type from the name it is invoked under and rejects "pre-commit.legacy". The
+# result is every commit failing while nothing is ever scanned. Declaring
+# talisman here keeps pre-commit the single owner of the hook path.
+repos:
+  - repo: https://github.com/thoughtworks/talisman
+    rev: v1.37.0
+    hooks:
+      - id: talisman-commit
+        # --githook states the hook type explicitly instead of relying on the
+        # filename talisman happens to be invoked under.
+        entry: cmd --githook pre-commit
+        # Explicit: with no default_stages, a hook omitting this runs at every
+        # installed stage, so talisman would scan twice if commit-msg is ever
+        # installed here.
+        stages: [pre-commit]
