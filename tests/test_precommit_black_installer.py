@@ -242,6 +242,67 @@ def fake_pre_commit(bin_dir, tmp_path_factory):
     return log
 
 
+class TestHooksPathBlocksActivation:
+    """`pre-commit install` refuses while core.hooksPath is set. Say so.
+
+    It exits non-zero, and `set -e` killed the installer there -- before its own
+    closing guidance -- leaving the consumer with a written config, no git hook,
+    and nothing to act on. The setting is never touched: it is the consumer's,
+    and unsetting it is not the installer's call.
+    """
+
+    FOREIGN = "/opt/company/githooks"
+
+    def _set_hooks_path(self, repo, path):
+        subprocess.run(
+            ["git", "config", "--local", "core.hooksPath", str(path)],
+            cwd=repo,
+            check=True,
+            env=clean_env(),
+        )
+
+    def test_finishes_cleanly_and_names_the_path(self, repo, bin_dir, fake_pre_commit):
+        self._set_hooks_path(repo, self.FOREIGN)
+        result = _install(repo, bin_dir)
+        assert "NOT activated" in result.stdout
+        assert self.FOREIGN in result.stdout
+
+    def test_does_not_try_to_install_the_git_hook(self, repo, bin_dir, fake_pre_commit):
+        self._set_hooks_path(repo, self.FOREIGN)
+        _install(repo, bin_dir)
+        assert "install" not in fake_pre_commit.read_text()
+
+    def test_leaves_the_setting_alone(self, repo, bin_dir, fake_pre_commit):
+        self._set_hooks_path(repo, self.FOREIGN)
+        _install(repo, bin_dir)
+        assert (
+            subprocess.run(
+                ["git", "config", "--local", "--get", "core.hooksPath"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                env=clean_env(),
+                check=True,
+            ).stdout.strip()
+            == self.FOREIGN
+        )
+
+    def test_still_wires_the_config(self, repo, bin_dir, fake_pre_commit):
+        """The wiring is useful on its own -- CI runs pre-commit without a hook."""
+        self._set_hooks_path(repo, self.FOREIGN)
+        _install(repo, bin_dir)
+        assert _block(repo)["hooks"][0]["id"] == "black"
+
+    def test_reports_any_other_install_failure(self, repo, bin_dir, fake_pre_commit):
+        """Same silent death, any other cause; same fix."""
+        (bin_dir / "pre-commit").write_text(
+            f'#!/bin/sh\necho "$*" >> {fake_pre_commit}\n'
+            '[ "$1" = install ] && exit 1\nexit 0\n'
+        )
+        result = _install(repo, bin_dir)
+        assert "NOT activated" in result.stdout
+
+
 class TestPinsTheLatestRelease:
     def test_updates_to_the_latest_tag_then_installs(
         self, repo, bin_dir, fake_pre_commit

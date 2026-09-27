@@ -407,6 +407,14 @@ on-demand [`python-fp-lint-check`](#linting-without-committing) hook into
 `.pre-commit-config.yaml`, and runs `pre-commit install`. Re-running refreshes the rules, adds
 the check hook if it is missing, and leaves everything else alone.
 
+**Activating the git hook can fail without the wiring failing, and all three installers say so
+rather than stopping.** The commonest cause is `core.hooksPath`: pre-commit refuses to install
+while it is set, so you get a wired config and no git hook. The installer warns, names the path,
+prints the two commands that finish the job, and exits 0 — it does **not** unset `core.hooksPath`
+for you. That setting is yours, it may be there because another tool wants it (talisman is one),
+and dropping it is your call. The wiring is still worth having on its own: `pre-commit run` in CI
+needs no git hook at all.
+
 **Never place a `.gitignore` inside `.python-fp-lint/`.** ast-grep silently matches nothing when
 an ignore file inside the rules directory excludes them — the gate then passes everything while
 reporting success. This is why the rules are copied out of the installed package at all: the
