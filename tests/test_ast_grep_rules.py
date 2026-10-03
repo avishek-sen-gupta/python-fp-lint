@@ -534,6 +534,46 @@ class TestObjectTypeRule:
 
 
 # ---------------------------------------------------------------------------
+# Type rules (StrEnum)
+# ---------------------------------------------------------------------------
+
+
+@needs_sg
+class TestStrEnumRule:
+    def test_strenum_base_fails(self, tmp_path):
+        f = _make_file(tmp_path, "class Color(StrEnum):\n    RED = 'red'\n")
+        assert "no-str-enum" in _run_sg(f)
+
+    def test_qualified_strenum_base_fails(self, tmp_path):
+        f = _make_file(tmp_path, "class Color(enum.StrEnum):\n    RED = 'red'\n")
+        assert "no-str-enum" in _run_sg(f)
+
+    def test_str_enum_mixin_fails(self, tmp_path):
+        f = _make_file(tmp_path, "class Color(str, Enum):\n    RED = 'red'\n")
+        assert "no-str-enum" in _run_sg(f)
+
+    def test_str_qualified_enum_mixin_fails(self, tmp_path):
+        f = _make_file(tmp_path, "class Color(str, enum.Enum):\n    RED = 'red'\n")
+        assert "no-str-enum" in _run_sg(f)
+
+    def test_functional_strenum_fails(self, tmp_path):
+        f = _make_file(tmp_path, "Color = StrEnum('Color', ['RED', 'GREEN'])\n")
+        assert "no-str-enum" in _run_sg(f)
+
+    def test_plain_enum_passes(self, tmp_path):
+        f = _make_file(tmp_path, "class Color(Enum):\n    RED = 'red'\n")
+        assert "no-str-enum" not in _run_sg(f)
+
+    def test_str_subclass_passes(self, tmp_path):
+        f = _make_file(tmp_path, "class Name(str):\n    pass\n")
+        assert "no-str-enum" not in _run_sg(f)
+
+    def test_int_enum_passes(self, tmp_path):
+        f = _make_file(tmp_path, "class Level(IntEnum):\n    LOW = 1\n")
+        assert "no-str-enum" not in _run_sg(f)
+
+
+# ---------------------------------------------------------------------------
 # Null-object rules (or None fallback)
 # ---------------------------------------------------------------------------
 

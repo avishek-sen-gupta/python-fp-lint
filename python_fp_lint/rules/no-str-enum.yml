@@ -1,0 +1,39 @@
+id: no-str-enum
+language: python
+rule:
+  any:
+    # class X(StrEnum) / class X(enum.StrEnum)
+    - kind: class_definition
+      has:
+        field: superclasses
+        has:
+          any:
+            - kind: identifier
+              regex: "^StrEnum$"
+            - kind: attribute
+              regex: "\\.StrEnum$"
+    # class X(str, Enum) / class X(str, enum.Enum) — the pre-3.11 spelling
+    - kind: class_definition
+      has:
+        field: superclasses
+        all:
+          - has:
+              kind: identifier
+              regex: "^str$"
+          - has:
+              any:
+                - kind: identifier
+                  regex: "^Enum$"
+                - kind: attribute
+                  regex: "\\.Enum$"
+    # StrEnum("Color", [...]) — functional API
+    - kind: call
+      has:
+        field: function
+        any:
+          - kind: identifier
+            regex: "^StrEnum$"
+          - kind: attribute
+            regex: "\\.StrEnum$"
+message: "StrEnum / (str, Enum) — members compare equal to raw strings and leak into str APIs; use a plain Enum and convert at the boundary"
+severity: warning

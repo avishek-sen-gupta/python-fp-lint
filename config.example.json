@@ -34,6 +34,7 @@
     "no-unfrozen-dataclass",
     "no-any-type",
     "no-object-type",
+    "no-str-enum",
     "no-or-none-fallback",
     "no-classmethod-utility",
     "no-mutation-outside-init",
