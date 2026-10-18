@@ -160,7 +160,7 @@ class TestCli:
         config = _write_config(tmp_path, max_complexity=10)
         result = _run("check", "--config", config, "--max-complexity", "3", target)
         assert result.returncode == 1
-        assert "C901" in result.stdout
+        assert result.stdout.count("C901") == 1
 
     def test_flag_relaxes_the_default(self, tmp_path):
         target = _source(tmp_path, "four.py", _FOUR)
@@ -210,7 +210,7 @@ class TestEntryPoints:
             cwd=str(tmp_path),
         )
         assert strict.returncode == 1
-        assert "C901" in strict.stdout
+        assert strict.stdout.count("C901") == 1
 
     def test_hook_check_honours_the_config_file(self, tmp_path):
         from python_fp_lint.hook_check import check_tool_event

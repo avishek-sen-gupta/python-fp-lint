@@ -41,34 +41,37 @@ def _run(*args, cwd=REPO_ROOT):
 
 class TestGlobMatching:
     def test_bare_name_matches_basename_at_any_depth(self):
-        assert is_excluded("a/b/foo_pb2.py", "/proj", ["*_pb2.py"])
-        assert not is_excluded("a/b/foo.py", "/proj", ["*_pb2.py"])
+        assert is_excluded("a/b/foo_pb2.py", "/proj", ["*_pb2.py"]) is True
+        assert is_excluded("a/b/foo.py", "/proj", ["*_pb2.py"]) is False
 
     def test_star_does_not_cross_a_separator(self):
-        assert is_excluded("src/gen.py", "/proj", ["src/*.py"])
-        assert not is_excluded("src/deep/gen.py", "/proj", ["src/*.py"])
+        assert is_excluded("src/gen.py", "/proj", ["src/*.py"]) is True
+        assert is_excluded("src/deep/gen.py", "/proj", ["src/*.py"]) is False
 
     def test_double_star_crosses_separators(self):
-        assert is_excluded("src/deep/gen.py", "/proj", ["src/**/*.py"])
-        assert is_excluded("src/gen.py", "/proj", ["src/**/*.py"])
+        assert is_excluded("src/deep/gen.py", "/proj", ["src/**/*.py"]) is True
+        assert is_excluded("src/gen.py", "/proj", ["src/**/*.py"]) is True
 
     def test_trailing_slash_excludes_a_whole_directory(self):
-        assert is_excluded("build/a/b.py", "/proj", ["build/"])
-        assert not is_excluded("src/build_helper.py", "/proj", ["build/"])
+        assert is_excluded("build/a/b.py", "/proj", ["build/"]) is True
+        assert is_excluded("src/build_helper.py", "/proj", ["build/"]) is False
 
     def test_question_mark_matches_one_character(self):
-        assert is_excluded("v1.py", "/proj", ["v?.py"])
-        assert not is_excluded("v12.py", "/proj", ["v?.py"])
+        assert is_excluded("v1.py", "/proj", ["v?.py"]) is True
+        assert is_excluded("v12.py", "/proj", ["v?.py"]) is False
 
     def test_absolute_paths_are_matched_relative_to_the_project_root(self):
-        assert is_excluded("/proj/tests/a.py", "/proj", ["tests/"])
-        assert not is_excluded("/other/tests/a.py", "/proj", ["tests/"])
+        assert is_excluded("/proj/tests/a.py", "/proj", ["tests/"]) is True
+        assert is_excluded("/other/tests/a.py", "/proj", ["tests/"]) is False
 
     def test_no_patterns_excludes_nothing(self):
-        assert not is_excluded("anything.py", "/proj", [])
+        assert is_excluded("anything.py", "/proj", []) is False
 
     def test_pattern_is_anchored_at_both_ends(self):
-        assert not is_excluded("src/generated_extra.py", "/proj", ["src/generated.py"])
+        assert (
+            is_excluded("src/generated_extra.py", "/proj", ["src/generated.py"])
+            is False
+        )
 
 
 class TestExcludeFromConfig:
@@ -78,7 +81,7 @@ class TestExcludeFromConfig:
         result = LintGate(locations=Locations(config_path=path)).evaluate(
             [target], str(tmp_path)
         )
-        assert result.passed
+        assert result.passed is True
         assert result.violations == []
 
     def test_unexcluded_sibling_is_still_linted(self, tmp_path):
@@ -88,7 +91,7 @@ class TestExcludeFromConfig:
         result = LintGate(locations=Locations(config_path=path)).evaluate(
             [excluded, kept], str(tmp_path)
         )
-        assert not result.passed
+        assert result.passed is False
         assert {os.path.abspath(v.file) for v in result.violations} == {
             os.path.abspath(kept)
         }
@@ -117,7 +120,7 @@ class TestExcludeFromConfig:
         gate = LintGate(
             locations=Locations(config_path=path), settings=LintSettings(exclude=[])
         )
-        assert not gate.evaluate([target], str(tmp_path)).passed
+        assert gate.evaluate([target], str(tmp_path)).passed is False
 
 
 class TestExcludeOnCLI:

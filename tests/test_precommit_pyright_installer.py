@@ -3,7 +3,6 @@
 
 import json
 import os
-import re
 import subprocess
 import sys
 
@@ -91,13 +90,17 @@ class TestFreshRepo:
 
     def test_pins_a_real_release_tag(self, repo, bin_dir):
         _install(repo, bin_dir)
-        assert re.fullmatch(r"v\d+\.\d+\.\d+", str(_block(repo)["rev"]))
+        rev = str(_block(repo)["rev"])
+        assert (rev[:1], [p.isdigit() for p in rev[1:].split(".")]) == (
+            "v",
+            [True, True, True],
+        )
 
     def test_removes_everything_the_installer_created(self, repo, bin_dir):
         _install(repo, bin_dir)
         _uninstall(repo, bin_dir)
-        assert not (repo / ".pre-commit-config.yaml").exists()
-        assert not (repo / "pyrightconfig.json").exists()
+        assert (repo / ".pre-commit-config.yaml").exists() is False
+        assert (repo / "pyrightconfig.json").exists() is False
 
     def test_is_a_no_op_when_nothing_is_installed(self, repo, bin_dir):
         _uninstall(repo, bin_dir)
@@ -118,7 +121,7 @@ class TestFreshRepo:
     def test_refuses_outside_a_git_repo_root(self, tmp_path, bin_dir):
         result = _sh(INSTALL, tmp_path, bin_dir)
         assert result.returncode == 1
-        assert "not a git repository root" in result.stderr
+        assert result.stderr.count("not a git repository root") == 1
 
 
 class TestExistingPyrightConfig:
@@ -128,7 +131,7 @@ class TestExistingPyrightConfig:
         (repo / "pyrightconfig.json").write_text(self.MINE)
         result = _install(repo, bin_dir)
         assert (repo / "pyrightconfig.json").read_text() == self.MINE
-        assert "already exists" in result.stdout
+        assert result.stdout.count("already exists") == 1
 
     def test_uninstall_keeps_it(self, repo, bin_dir):
         (repo / "pyrightconfig.json").write_text(self.MINE)
@@ -153,7 +156,7 @@ class TestExistingPreCommitConfig:
         config = repo / ".pre-commit-config.yaml"
         config.write_text(self.ORIGINAL)
         _install(repo, bin_dir)
-        assert PYRIGHT_URL in config.read_text()
+        assert config.read_text().count(PYRIGHT_URL) == 1
         _uninstall(repo, bin_dir)
         assert config.read_text() == self.ORIGINAL
 
@@ -178,14 +181,14 @@ class TestCoexistsWithTheLintGate:
         _install(repo, bin_dir)
         _uninstall(repo, bin_dir)
         assert self._urls(repo) == {LINT_URL}
-        assert (repo / "fp.json").exists()
+        assert (repo / "fp.json").exists() is True
 
     def test_removing_the_lint_gate_leaves_pyright(self, repo, bin_dir):
         assert _sh(self.LINT, repo, bin_dir).returncode == 0
         _install(repo, bin_dir)
         assert _sh(self.LINT_UNINSTALL, repo, bin_dir).returncode == 0
         assert self._urls(repo) == {PYRIGHT_URL}
-        assert (repo / "pyrightconfig.json").exists()
+        assert (repo / "pyrightconfig.json").exists() is True
 
 
 @pytest.fixture
@@ -216,4 +219,4 @@ class TestPinsTheLatestRelease:
         )
         result = _install(repo, bin_dir)
         assert fake_pre_commit.read_text().splitlines()[-1] == "install"
-        assert "could not update rev" in result.stdout
+        assert result.stdout.count("could not update rev") == 1

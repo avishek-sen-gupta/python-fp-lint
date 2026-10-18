@@ -65,7 +65,7 @@ class TestListMutationRules:
 
     def test_list_append_fails(self, tmp_path):
         f = _make_file(tmp_path, "items = []\nitems.append(1)\n")
-        assert "no-list-append" in _run_sg(f)
+        assert _run_sg(f).count("no-list-append") == 1
 
     def test_list_append_passes(self, tmp_path):
         f = _make_file(tmp_path, "items = [1, 2, 3]\n")
@@ -73,7 +73,7 @@ class TestListMutationRules:
 
     def test_list_extend_fails(self, tmp_path):
         f = _make_file(tmp_path, "items = []\nitems.extend([1, 2])\n")
-        assert "no-list-extend" in _run_sg(f)
+        assert _run_sg(f).count("no-list-extend") == 1
 
     def test_list_extend_passes(self, tmp_path):
         f = _make_file(tmp_path, "items = [1] + [2]\n")
@@ -81,7 +81,7 @@ class TestListMutationRules:
 
     def test_list_insert_fails(self, tmp_path):
         f = _make_file(tmp_path, "items = []\nitems.insert(0, 1)\n")
-        assert "no-list-insert" in _run_sg(f)
+        assert _run_sg(f).count("no-list-insert") == 1
 
     def test_list_insert_passes(self, tmp_path):
         f = _make_file(tmp_path, "items = [1, 2, 3]\n")
@@ -89,7 +89,7 @@ class TestListMutationRules:
 
     def test_list_pop_fails(self, tmp_path):
         f = _make_file(tmp_path, "items = [1, 2]\nitems.pop(0)\n")
-        assert "no-list-pop" in _run_sg(f)
+        assert _run_sg(f).count("no-list-pop") == 1
 
     def test_list_pop_passes(self, tmp_path):
         f = _make_file(tmp_path, "items = [1, 2, 3]\n")
@@ -97,7 +97,7 @@ class TestListMutationRules:
 
     def test_list_remove_fails(self, tmp_path):
         f = _make_file(tmp_path, "items = [1, 2]\nitems.remove(1)\n")
-        assert "no-list-remove" in _run_sg(f)
+        assert _run_sg(f).count("no-list-remove") == 1
 
     def test_list_remove_passes(self, tmp_path):
         f = _make_file(tmp_path, "items = [x for x in [1, 2] if x != 1]\n")
@@ -109,7 +109,7 @@ class TestDictMutationRules:
 
     def test_dict_clear_fails(self, tmp_path):
         f = _make_file(tmp_path, "d = {'a': 1}\nd.clear()\n")
-        assert "no-dict-clear" in _run_sg(f)
+        assert _run_sg(f).count("no-dict-clear") == 1
 
     def test_dict_clear_passes(self, tmp_path):
         f = _make_file(tmp_path, "d = {}\n")
@@ -117,7 +117,7 @@ class TestDictMutationRules:
 
     def test_dict_update_fails(self, tmp_path):
         f = _make_file(tmp_path, "d = {}\nd.update({'a': 1})\n")
-        assert "no-dict-update" in _run_sg(f)
+        assert _run_sg(f).count("no-dict-update") == 1
 
     def test_dict_update_passes(self, tmp_path):
         f = _make_file(tmp_path, "d = {**a, **b}\n")
@@ -125,7 +125,7 @@ class TestDictMutationRules:
 
     def test_dict_setdefault_fails(self, tmp_path):
         f = _make_file(tmp_path, "d = {}\nd.setdefault('key', [])\n")
-        assert "no-dict-setdefault" in _run_sg(f)
+        assert _run_sg(f).count("no-dict-setdefault") == 1
 
     def test_dict_setdefault_passes(self, tmp_path):
         f = _make_file(tmp_path, "d = {'key': []}\n")
@@ -137,7 +137,7 @@ class TestSetMutationRules:
 
     def test_set_add_fails(self, tmp_path):
         f = _make_file(tmp_path, "s = set()\ns.add(1)\n")
-        assert "no-set-add" in _run_sg(f)
+        assert _run_sg(f).count("no-set-add") == 1
 
     def test_set_add_passes(self, tmp_path):
         f = _make_file(tmp_path, "s = {1} | {2}\n")
@@ -145,7 +145,7 @@ class TestSetMutationRules:
 
     def test_set_discard_fails(self, tmp_path):
         f = _make_file(tmp_path, "s = {1, 2}\ns.discard(1)\n")
-        assert "no-set-discard" in _run_sg(f)
+        assert _run_sg(f).count("no-set-discard") == 1
 
     def test_set_discard_passes(self, tmp_path):
         f = _make_file(tmp_path, "s = {1, 2} - {1}\n")
@@ -157,7 +157,7 @@ class TestSubscriptMutationRules:
 
     def test_subscript_mutation_fails(self, tmp_path):
         f = _make_file(tmp_path, "d = {}\nd['key'] = 'value'\n")
-        assert "no-subscript-mutation" in _run_sg(f)
+        assert _run_sg(f).count("no-subscript-mutation") == 1
 
     def test_subscript_mutation_passes(self, tmp_path):
         f = _make_file(tmp_path, "d = {'key': 'value'}\n")
@@ -165,7 +165,7 @@ class TestSubscriptMutationRules:
 
     def test_subscript_del_fails(self, tmp_path):
         f = _make_file(tmp_path, "d = {'a': 1}\ndel d['a']\n")
-        assert "no-subscript-del" in _run_sg(f)
+        assert _run_sg(f).count("no-subscript-del") == 1
 
     def test_subscript_del_passes(self, tmp_path):
         f = _make_file(tmp_path, "d = {k: v for k, v in d.items() if k != 'a'}\n")
@@ -173,11 +173,11 @@ class TestSubscriptMutationRules:
 
     def test_subscript_augmented_mutation_plus_fails(self, tmp_path):
         f = _make_file(tmp_path, "d = {'a': 1}\nd['a'] += 1\n")
-        assert "no-subscript-augmented-mutation" in _run_sg(f)
+        assert _run_sg(f).count("no-subscript-augmented-mutation") == 1
 
     def test_subscript_augmented_mutation_shift_fails(self, tmp_path):
         f = _make_file(tmp_path, "d = {'a': 8}\nd['a'] >>= 2\n")
-        assert "no-subscript-augmented-mutation" in _run_sg(f)
+        assert _run_sg(f).count("no-subscript-augmented-mutation") == 1
 
     def test_subscript_augmented_mutation_passes(self, tmp_path):
         f = _make_file(tmp_path, "x = 1\n")
@@ -185,7 +185,7 @@ class TestSubscriptMutationRules:
 
     def test_subscript_tuple_mutation_fails(self, tmp_path):
         f = _make_file(tmp_path, "d = {}\nd['a'], d['b'] = 1, 2\n")
-        assert "no-subscript-tuple-mutation" in _run_sg(f)
+        assert _run_sg(f).count("no-subscript-tuple-mutation") == 1
 
     def test_subscript_tuple_mutation_passes(self, tmp_path):
         f = _make_file(tmp_path, "a, b = 1, 2\n")
@@ -193,19 +193,19 @@ class TestSubscriptMutationRules:
 
     def test_setitem_call_fails(self, tmp_path):
         f = _make_file(tmp_path, "d = {}\nd.__setitem__('k', 'v')\n")
-        assert "no-setitem-call" in _run_sg(f)
+        assert _run_sg(f).count("no-setitem-call") == 1
 
     def test_operator_setitem_fails(self, tmp_path):
         f = _make_file(
             tmp_path, "import operator\nd = {}\noperator.setitem(d, 'k', 'v')\n"
         )
-        assert "no-setitem-call" in _run_sg(f)
+        assert _run_sg(f).count("no-setitem-call") == 1
 
     def test_operator_setitem_aliased_fails(self, tmp_path):
         f = _make_file(
             tmp_path, "import operator as op\nd = {}\nop.setitem(d, 'k', 'v')\n"
         )
-        assert "no-setitem-call" in _run_sg(f)
+        assert _run_sg(f).count("no-setitem-call") == 1
 
     def test_setitem_call_passes(self, tmp_path):
         f = _make_file(tmp_path, "d = {'k': 'v'}\n")
@@ -217,7 +217,7 @@ class TestNoneRules:
 
     def test_is_none_fails(self, tmp_path):
         f = _make_file(tmp_path, "x = 1\nif x is None:\n    pass\n")
-        assert "no-is-none" in _run_sg(f)
+        assert _run_sg(f).count("no-is-none") == 1
 
     def test_is_none_passes(self, tmp_path):
         f = _make_file(tmp_path, "x = 1\n")
@@ -225,7 +225,7 @@ class TestNoneRules:
 
     def test_is_not_none_fails(self, tmp_path):
         f = _make_file(tmp_path, "x = 1\nif x is not None:\n    pass\n")
-        assert "no-is-not-none" in _run_sg(f)
+        assert _run_sg(f).count("no-is-not-none") == 1
 
     def test_is_not_none_passes(self, tmp_path):
         f = _make_file(tmp_path, "x = 1\n")
@@ -233,11 +233,11 @@ class TestNoneRules:
 
     def test_none_default_param_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(x=None):\n    return x\n")
-        assert "no-none-default-param" in _run_sg(f)
+        assert _run_sg(f).count("no-none-default-param") == 1
 
     def test_none_default_param_multiple_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(x, y=None, z=None):\n    return x\n")
-        assert "no-none-default-param" in _run_sg(f)
+        assert _run_sg(f).count("no-none-default-param") == 2
 
     def test_none_default_param_non_none_passes(self, tmp_path):
         f = _make_file(tmp_path, "def f(x=0, y=''):\n    return x\n")
@@ -249,11 +249,11 @@ class TestNoneRules:
 
     def test_none_default_param_annotated_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(x: int | None = None):\n    return x\n")
-        assert "no-none-default-param" in _run_sg(f)
+        assert _run_sg(f).count("no-none-default-param") == 1
 
     def test_none_default_param_annotated_keyword_only_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(*, x: str | None = None):\n    return x\n")
-        assert "no-none-default-param" in _run_sg(f)
+        assert _run_sg(f).count("no-none-default-param") == 1
 
     def test_none_default_param_annotated_null_object_passes(self, tmp_path):
         f = _make_file(
@@ -264,23 +264,23 @@ class TestNoneRules:
 
     def test_none_case_pattern_fails(self, tmp_path):
         f = _make_file(tmp_path, "match x:\n    case None:\n        pass\n")
-        assert "no-none-case-pattern" in _run_sg(f)
+        assert _run_sg(f).count("no-none-case-pattern") == 1
 
     def test_none_case_pattern_with_guard_fails(self, tmp_path):
         f = _make_file(tmp_path, "match x:\n    case None if y:\n        pass\n")
-        assert "no-none-case-pattern" in _run_sg(f)
+        assert _run_sg(f).count("no-none-case-pattern") == 1
 
     def test_none_case_pattern_in_or_pattern_fails(self, tmp_path):
         f = _make_file(tmp_path, "match x:\n    case None | 1:\n        pass\n")
-        assert "no-none-case-pattern" in _run_sg(f)
+        assert _run_sg(f).count("no-none-case-pattern") == 1
 
     def test_none_case_pattern_nested_in_sequence_fails(self, tmp_path):
         f = _make_file(tmp_path, "match x:\n    case [None]:\n        pass\n")
-        assert "no-none-case-pattern" in _run_sg(f)
+        assert _run_sg(f).count("no-none-case-pattern") == 1
 
     def test_none_case_pattern_nested_in_class_fails(self, tmp_path):
         f = _make_file(tmp_path, "match x:\n    case Foo(bar=None):\n        pass\n")
-        assert "no-none-case-pattern" in _run_sg(f)
+        assert _run_sg(f).count("no-none-case-pattern") == 1
 
     def test_none_case_pattern_non_none_case_passes(self, tmp_path):
         f = _make_file(tmp_path, "match x:\n    case 1:\n        pass\n")
@@ -299,29 +299,29 @@ class TestOptionalNoneRules:
             tmp_path,
             "from typing import Optional\ndef f(x: Optional[str]):\n    pass\n",
         )
-        assert "no-optional-none" in _run_sg(f)
+        assert _run_sg(f).count("no-optional-none") == 1
 
     def test_pipe_none_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(x: str | None):\n    pass\n")
-        assert "no-optional-none" in _run_sg(f)
+        assert _run_sg(f).count("no-optional-none") == 1
 
     def test_none_pipe_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(x: None | str):\n    pass\n")
-        assert "no-optional-none" in _run_sg(f)
+        assert _run_sg(f).count("no-optional-none") == 1
 
     def test_union_none_fails(self, tmp_path):
         f = _make_file(
             tmp_path,
             "from typing import Union\ndef f(x: Union[str, None]):\n    pass\n",
         )
-        assert "no-optional-none" in _run_sg(f)
+        assert _run_sg(f).count("no-optional-none") == 1
 
     def test_union_none_reversed_fails(self, tmp_path):
         f = _make_file(
             tmp_path,
             "from typing import Union\ndef f(x: Union[None, str]):\n    pass\n",
         )
-        assert "no-optional-none" in _run_sg(f)
+        assert _run_sg(f).count("no-optional-none") == 1
 
     def test_clean_type_passes(self, tmp_path):
         f = _make_file(tmp_path, "def f(x: str):\n    pass\n")
@@ -336,25 +336,40 @@ class TestOptionalNoneRules:
 
 @needs_sg
 class TestNoAnyTypeRule:
+    @pytest.mark.parametrize(
+        ("annotation", "expected"),
+        [
+            ("dict[str, Any]", 1),
+            ("list[dict[str, Any]]", 1),
+            ("dict[Any, Any]", 2),
+            ("Any | None", 1),
+            ("tuple[int, ...]", 0),
+        ],
+    )
+    def test_reports_each_occurrence_once(self, tmp_path, annotation, expected):
+        """Only the innermost type node naming Any is reported, not every
+        enclosing generic -- one Any is one violation however deep."""
+        f = _make_file(tmp_path, f"def f(x: {annotation}) -> int:\n    return 1\n")
+        assert _run_sg(f).count("no-any-type") == expected
 
     def test_bare_any_param_fails(self, tmp_path):
         f = _make_file(tmp_path, "from typing import Any\ndef f(x: Any):\n    pass\n")
-        assert "no-any-type" in _run_sg(f)
+        assert _run_sg(f).count("no-any-type") == 1
 
     def test_any_return_type_fails(self, tmp_path):
         f = _make_file(tmp_path, "from typing import Any\ndef f() -> Any:\n    pass\n")
-        assert "no-any-type" in _run_sg(f)
+        assert _run_sg(f).count("no-any-type") == 1
 
     def test_any_in_generic_fails(self, tmp_path):
         f = _make_file(
             tmp_path,
             "from typing import Any\ndef f(x: dict[str, Any]):\n    pass\n",
         )
-        assert "no-any-type" in _run_sg(f)
+        assert _run_sg(f).count("no-any-type") == 1
 
     def test_any_variable_annotation_fails(self, tmp_path):
         f = _make_file(tmp_path, "from typing import Any\nx: Any = 1\n")
-        assert "no-any-type" in _run_sg(f)
+        assert _run_sg(f).count("no-any-type") == 1
 
     def test_clean_type_passes(self, tmp_path):
         f = _make_file(tmp_path, "def f(x: str) -> int:\n    return 1\n")
@@ -373,7 +388,7 @@ class TestStyleRules:
         f = _make_file(
             tmp_path, "class C:\n    @staticmethod\n    def f():\n        pass\n"
         )
-        assert "no-static-method" in _run_sg(f)
+        assert _run_sg(f).count("no-static-method") == 1
 
     def test_static_method_passes(self, tmp_path):
         f = _make_file(tmp_path, "def f():\n    pass\n")
@@ -390,7 +405,7 @@ class TestAugmentedAssignmentRules:
 
     def test_attribute_augmented_mutation_fails(self, tmp_path):
         f = _make_file(tmp_path, "class C:\n    x = 0\nc = C()\nc.x += 1\n")
-        assert "no-attribute-augmented-mutation" in _run_sg(f)
+        assert _run_sg(f).count("no-attribute-augmented-mutation") == 1
 
     def test_attribute_augmented_mutation_passes(self, tmp_path):
         f = _make_file(tmp_path, "x = 1\n")
@@ -398,7 +413,7 @@ class TestAugmentedAssignmentRules:
 
     def test_local_augmented_mutation_fails(self, tmp_path):
         f = _make_file(tmp_path, "x = 1\nx += 1\n")
-        assert "no-local-augmented-mutation" in _run_sg(f)
+        assert _run_sg(f).count("no-local-augmented-mutation") == 1
 
     def test_local_augmented_mutation_all_operators(self, tmp_path):
         code = (
@@ -446,7 +461,7 @@ class TestDeepNestingRule:
             "        for cell in row:\n"
             "            process(cell)\n",
         )
-        assert "no-deep-nesting" in _run_sg(f)
+        assert _run_sg(f).count("no-deep-nesting") == 1
 
     def test_if_in_for_fails(self, tmp_path):
         f = _make_file(
@@ -456,7 +471,7 @@ class TestDeepNestingRule:
             "        if x > 0:\n"
             "            process(x)\n",
         )
-        assert "no-deep-nesting" in _run_sg(f)
+        assert _run_sg(f).count("no-deep-nesting") == 1
 
     def test_flat_for_passes(self, tmp_path):
         f = _make_file(
@@ -476,13 +491,13 @@ class TestLoopMutationRule:
             "    for x in items:\n"
             "        result.append(x)\n",
         )
-        assert "no-loop-mutation" in _run_sg(f)
+        assert _run_sg(f).count("no-loop-mutation") == 1
 
     def test_subscript_assign_in_for_fails(self, tmp_path):
         f = _make_file(
             tmp_path, "def f(d, keys):\n" "    for k in keys:\n" "        d[k] = 0\n"
         )
-        assert "no-loop-mutation" in _run_sg(f)
+        assert _run_sg(f).count("no-loop-mutation") == 1
 
     def test_no_mutation_in_for_passes(self, tmp_path):
         f = _make_file(
@@ -508,21 +523,37 @@ class TestLoopMutationRule:
 
 @needs_sg
 class TestObjectTypeRule:
+    @pytest.mark.parametrize(
+        ("annotation", "expected"),
+        [
+            ("dict[str, object]", 1),
+            ("list[dict[str, object]]", 1),
+            ("dict[object, object]", 2),
+            ("object | None", 1),
+            ("tuple[int, ...]", 0),
+        ],
+    )
+    def test_reports_each_occurrence_once(self, tmp_path, annotation, expected):
+        """Only the innermost type node naming object is reported, not every
+        enclosing generic -- one object is one violation however deep."""
+        f = _make_file(tmp_path, f"def f(x: {annotation}) -> int:\n    return 1\n")
+        assert _run_sg(f).count("no-object-type") == expected
+
     def test_object_param_annotation_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(x: object) -> int:\n    return 1\n")
-        assert "no-object-type" in _run_sg(f)
+        assert _run_sg(f).count("no-object-type") == 1
 
     def test_object_return_annotation_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(x: int) -> object:\n    return x\n")
-        assert "no-object-type" in _run_sg(f)
+        assert _run_sg(f).count("no-object-type") == 1
 
     def test_object_nested_in_generic_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(x: dict[str, object]) -> int:\n    return 1\n")
-        assert "no-object-type" in _run_sg(f)
+        assert _run_sg(f).count("no-object-type") == 1
 
     def test_object_variable_annotation_fails(self, tmp_path):
         f = _make_file(tmp_path, "x: object = compute()\n")
-        assert "no-object-type" in _run_sg(f)
+        assert _run_sg(f).count("no-object-type") == 1
 
     def test_object_base_class_passes(self, tmp_path):
         f = _make_file(tmp_path, "class Base(object):\n    pass\n")
@@ -542,23 +573,23 @@ class TestObjectTypeRule:
 class TestStrEnumRule:
     def test_strenum_base_fails(self, tmp_path):
         f = _make_file(tmp_path, "class Color(StrEnum):\n    RED = 'red'\n")
-        assert "no-str-enum" in _run_sg(f)
+        assert _run_sg(f).count("no-str-enum") == 1
 
     def test_qualified_strenum_base_fails(self, tmp_path):
         f = _make_file(tmp_path, "class Color(enum.StrEnum):\n    RED = 'red'\n")
-        assert "no-str-enum" in _run_sg(f)
+        assert _run_sg(f).count("no-str-enum") == 1
 
     def test_str_enum_mixin_fails(self, tmp_path):
         f = _make_file(tmp_path, "class Color(str, Enum):\n    RED = 'red'\n")
-        assert "no-str-enum" in _run_sg(f)
+        assert _run_sg(f).count("no-str-enum") == 1
 
     def test_str_qualified_enum_mixin_fails(self, tmp_path):
         f = _make_file(tmp_path, "class Color(str, enum.Enum):\n    RED = 'red'\n")
-        assert "no-str-enum" in _run_sg(f)
+        assert _run_sg(f).count("no-str-enum") == 1
 
     def test_functional_strenum_fails(self, tmp_path):
         f = _make_file(tmp_path, "Color = StrEnum('Color', ['RED', 'GREEN'])\n")
-        assert "no-str-enum" in _run_sg(f)
+        assert _run_sg(f).count("no-str-enum") == 1
 
     def test_plain_enum_passes(self, tmp_path):
         f = _make_file(tmp_path, "class Color(Enum):\n    RED = 'red'\n")
@@ -582,11 +613,11 @@ class TestStrEnumRule:
 class TestOrNoneFallbackRule:
     def test_or_none_return_fails(self, tmp_path):
         f = _make_file(tmp_path, "def f(a):\n    return a or None\n")
-        assert "no-or-none-fallback" in _run_sg(f)
+        assert _run_sg(f).count("no-or-none-fallback") == 1
 
     def test_or_none_assignment_fails(self, tmp_path):
         f = _make_file(tmp_path, "value = compute() or None\n")
-        assert "no-or-none-fallback" in _run_sg(f)
+        assert _run_sg(f).count("no-or-none-fallback") == 1
 
     def test_or_other_value_passes(self, tmp_path):
         f = _make_file(tmp_path, "def f(a, b):\n    return a or b\n")
@@ -609,7 +640,7 @@ class TestClassmethodUtilityRule:
             tmp_path,
             "class C:\n    @classmethod\n    def make(cls):\n        return cls()\n",
         )
-        assert "no-classmethod-utility" in _run_sg(f)
+        assert _run_sg(f).count("no-classmethod-utility") == 1
 
     def test_instance_method_passes(self, tmp_path):
         f = _make_file(tmp_path, "class C:\n    def make(self):\n        return 1\n")
@@ -631,13 +662,13 @@ class TestMutationOutsideInitRule:
         f = _make_file(
             tmp_path, "class C:\n    def go(self):\n        self.count = 1\n"
         )
-        assert "no-mutation-outside-init" in _run_sg(f)
+        assert _run_sg(f).count("no-mutation-outside-init") == 1
 
     def test_annotated_assignment_in_method_fails(self, tmp_path):
         f = _make_file(
             tmp_path, "class C:\n    def go(self):\n        self.total: int = 2\n"
         )
-        assert "no-mutation-outside-init" in _run_sg(f)
+        assert _run_sg(f).count("no-mutation-outside-init") == 1
 
     def test_assignment_in_init_passes(self, tmp_path):
         f = _make_file(
@@ -689,7 +720,7 @@ class TestXfailWithoutReasonRule:
             tmp_path,
             "import pytest\n\n\n@pytest.mark.xfail\ndef test_a():\n    assert f() == 1\n",
         )
-        assert "no-xfail-without-reason" in _run_sg(f)
+        assert _run_sg(f).count("no-xfail-without-reason") == 1
 
     def test_xfail_with_other_kwarg_only_fails(self, tmp_path):
         f = _make_file(
@@ -697,7 +728,7 @@ class TestXfailWithoutReasonRule:
             "import pytest\n\n\n@pytest.mark.xfail(strict=True)\n"
             "def test_a():\n    assert f() == 1\n",
         )
-        assert "no-xfail-without-reason" in _run_sg(f)
+        assert _run_sg(f).count("no-xfail-without-reason") == 1
 
     def test_xfail_with_reason_passes(self, tmp_path):
         f = _make_file(
@@ -725,37 +756,51 @@ class TestXfailWithoutReasonRule:
 
 @needs_sg
 class TestWeakAssertRule:
+    @pytest.mark.parametrize(
+        "message", ["result.stderr", "msg", "describe(result)", '"plain"']
+    )
+    def test_strong_assert_with_a_message_passes(self, tmp_path, message):
+        """The failure message is not the condition; only the condition counts."""
+        f = _make_file(
+            tmp_path, f"def test_a():\n    assert result.code == 0, {message}\n"
+        )
+        assert _run_sg(f).count("no-weak-assert") == 0
+
+    def test_weak_assert_with_a_message_still_fails(self, tmp_path):
+        f = _make_file(tmp_path, 'def test_a():\n    assert value, "explained"\n')
+        assert _run_sg(f).count("no-weak-assert") == 1
+
     def test_assert_is_not_none_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_a():\n    assert result is not None\n")
-        assert "no-weak-assert" in _run_sg(f)
+        assert _run_sg(f).count("no-weak-assert") == 1
 
     def test_assert_len_greater_than_zero_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_a():\n    assert len(items) > 0\n")
-        assert "no-weak-assert" in _run_sg(f)
+        assert _run_sg(f).count("no-weak-assert") == 1
 
     def test_assert_len_at_least_one_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_a():\n    assert len(items) >= 1\n")
-        assert "no-weak-assert" in _run_sg(f)
+        assert _run_sg(f).count("no-weak-assert") == 1
 
     def test_assert_containment_fails(self, tmp_path):
         f = _make_file(tmp_path, 'def test_a():\n    assert "name" in payload\n')
-        assert "no-weak-assert" in _run_sg(f)
+        assert _run_sg(f).count("no-weak-assert") == 1
 
     def test_assert_negated_truthiness_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_a():\n    assert not flag\n")
-        assert "no-weak-assert" in _run_sg(f)
+        assert _run_sg(f).count("no-weak-assert") == 1
 
     def test_assert_bare_identifier_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_a():\n    assert value\n")
-        assert "no-weak-assert" in _run_sg(f)
+        assert _run_sg(f).count("no-weak-assert") == 1
 
     def test_assert_bare_attribute_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_a():\n    assert obj.attr\n")
-        assert "no-weak-assert" in _run_sg(f)
+        assert _run_sg(f).count("no-weak-assert") == 1
 
     def test_assert_bare_call_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_a():\n    assert isinstance(value, dict)\n")
-        assert "no-weak-assert" in _run_sg(f)
+        assert _run_sg(f).count("no-weak-assert") == 1
 
     def test_assert_equality_passes(self, tmp_path):
         f = _make_file(tmp_path, "def test_a():\n    assert result == expected\n")
@@ -782,24 +827,24 @@ class TestWeakAssertRule:
 class TestAssertionlessTestRule:
     def test_no_check_at_all_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_a():\n    result = compute(2)\n")
-        assert "no-assertionless-test" in _run_sg(f)
+        assert _run_sg(f).count("no-assertionless-test") == 1
 
     def test_must_not_raise_comment_fails(self, tmp_path):
         """'Must not raise' is still an implicit check; make it explicit."""
         f = _make_file(
             tmp_path, "def test_a():\n    json.loads(text)  # must not raise\n"
         )
-        assert "no-assertionless-test" in _run_sg(f)
+        assert _run_sg(f).count("no-assertionless-test") == 1
 
     def test_method_without_check_fails(self, tmp_path):
         f = _make_file(
             tmp_path, "class TestThing:\n    def test_a(self):\n        compute(2)\n"
         )
-        assert "no-assertionless-test" in _run_sg(f)
+        assert _run_sg(f).count("no-assertionless-test") == 1
 
     def test_async_test_without_check_fails(self, tmp_path):
         f = _make_file(tmp_path, "async def test_a():\n    await compute(2)\n")
-        assert "no-assertionless-test" in _run_sg(f)
+        assert _run_sg(f).count("no-assertionless-test") == 1
 
     def test_weak_assert_passes(self, tmp_path):
         """Weak assertions are no-weak-assert's business, not this rule's."""
@@ -888,25 +933,25 @@ class TestVacuousTestRule:
 
     def test_only_assert_in_fails(self, tmp_path):
         f = _make_file(tmp_path, 'def test_foo():\n    assert "err" in messages\n')
-        assert "test-vacuous" in _run_sg_disabled(f)
+        assert _run_sg_disabled(f).count("test-vacuous") == 1
 
     def test_only_isinstance_fails(self, tmp_path):
         f = _make_file(
             tmp_path, "def test_foo():\n    assert isinstance(result, dict)\n"
         )
-        assert "test-vacuous" in _run_sg_disabled(f)
+        assert _run_sg_disabled(f).count("test-vacuous") == 1
 
     def test_only_assert_true_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    assert True\n")
-        assert "test-vacuous" in _run_sg_disabled(f)
+        assert _run_sg_disabled(f).count("test-vacuous") == 1
 
     def test_only_bare_assert_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    assert result\n")
-        assert "test-vacuous" in _run_sg_disabled(f)
+        assert _run_sg_disabled(f).count("test-vacuous") == 1
 
     def test_no_assert_at_all_fails(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    x = compute()\n")
-        assert "test-vacuous" in _run_sg_disabled(f)
+        assert _run_sg_disabled(f).count("test-vacuous") == 1
 
     def test_assert_eq_passes(self, tmp_path):
         f = _make_file(tmp_path, "def test_foo():\n    assert result == expected\n")

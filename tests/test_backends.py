@@ -83,7 +83,9 @@ class TestEnforceStrict:
         with pytest.raises(SystemExit) as exc:
             _enforce_strict(_Args(strict=True))
         assert exc.value.code == 2
-        assert "ast-grep" in capsys.readouterr().err
+        assert capsys.readouterr().err == (
+            "error: required lint backend(s) not found: ast-grep\n"
+        )
 
     def test_silent_when_nothing_missing(self, monkeypatch, capsys):
         monkeypatch.setattr("python_fp_lint.__main__.missing_backends", lambda: [])
@@ -112,7 +114,7 @@ class TestPreCommitHooksManifest:
         assert set(by_id) == {"python-fp-lint", "python-fp-lint-check"}
         for hook in hooks:
             assert hook["types"] == ["python"]
-        assert by_id["python-fp-lint"]["entry"].startswith("python-fp-lint precommit")
+        assert by_id["python-fp-lint"]["entry"] == "python-fp-lint precommit --strict"
 
     def test_commit_gate_runs_only_at_the_pre_commit_stage(self):
         """Unset `stages` means every installed stage: with a commit-msg hook
@@ -136,7 +138,7 @@ class TestPreCommitHooksManifest:
             hook = next(
                 h for h in yaml.safe_load(f) if h["id"] == "python-fp-lint-check"
             )
-        assert hook["entry"].startswith("python-fp-lint check")
+        assert hook["entry"] == "python-fp-lint check --strict"
         assert hook["stages"] == ["manual"]
 
 

@@ -9,9 +9,9 @@ fileignoreconfig:
 - filename: tests/test_lint_gate.py
   checksum: 9f467ff33170c9e4808a7ed69ad5db20fff6bf7f659b24edd0053b445476e643
 - filename: tests/test_ast_grep_rules.py
-  checksum: ae43d558ca6b471c1f0e8b084064b60010e4ecd96350c5aa2469743f8ae62189
+  checksum: 20ca969f1bc0d6281b9fd58af9fb029836138db76c7996f00c315cad0bfd4dc0
 - filename: tests/test_cli.py
-  checksum: 989e567d0302fafc30d4e1eaeb4288808e23eac3
+  checksum: 8862259380d1cfd2f614bc4e90f763ea4ecbebe92c44681c9908b70b65fa94b5
 - filename: python_fp_lint/__main__.py
   checksum: 8618c214d8a2fd976f59b9197cd299b216bd739220d46f00a839bdb5400f15d5
 - filename: docs/superpowers/specs/2026-04-14-semgrep-to-ruff-migration-design.md

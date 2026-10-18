@@ -26,7 +26,7 @@ class TestReassignmentGateCleanCode:
         path = _make_file(str(tmp_path), "clean.py", "x = 1\n")
         gate = ReassignmentGate()
         result = gate.evaluate([path], str(tmp_path))
-        assert isinstance(result, LintResult)
+        assert type(result) is LintResult
 
     def test_single_assignment_passes(self, tmp_path):
         path = _make_file(str(tmp_path), "clean.py", "x = 1\ny = 2\n")
@@ -92,7 +92,7 @@ class TestReassignmentGateDetection:
         gate = ReassignmentGate()
         result = gate.evaluate([path], str(tmp_path))
         assert result.passed is False
-        assert any(v.rule == "reassignment" for v in result.violations)
+        assert [v.rule for v in result.violations].count("reassignment") == 1
 
     def test_parameter_reassignment(self, tmp_path):
         code = "def foo(x):\n" "    x = x + 1\n" "    return x\n"
@@ -129,10 +129,12 @@ class TestReassignmentGateDetection:
         gate = ReassignmentGate()
         result = gate.evaluate([path], str(tmp_path))
         v = result.violations[0]
-        assert v.rule == "reassignment"
-        assert "dirty.py" in v.file
-        assert v.line > 0
-        assert "x" in v.message
+        assert (v.rule, os.path.basename(v.file), v.line) == (
+            "reassignment",
+            "dirty.py",
+            3,
+        )
+        assert v.message == "'x' reassigned (scope: function foo())"
 
     def test_only_scans_provided_files(self, tmp_path):
         _make_file(str(tmp_path), "dirty.py", "x = 1\nx = 2\n")

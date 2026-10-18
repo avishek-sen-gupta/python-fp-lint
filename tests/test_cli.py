@@ -5,10 +5,13 @@ import json
 import os
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
 from gitenv import clean_env
+
+from python_fp_lint.rules_meta import list_rules
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 # `check` and `precommit` require --config; the shipped example enables
@@ -59,19 +62,19 @@ class TestCLI:
     def test_clean_file_exits_zero(self, clean_file):
         result = _run_check(clean_file)
         assert result.returncode == 0
-        assert "No violations" in result.stdout
+        assert result.stdout.count("No violations") == 1
 
     def test_dirty_file_exits_nonzero(self, dirty_file):
         result = _run_check(dirty_file)
         assert result.returncode == 1
-        assert "violation" in result.stdout
+        assert result.stdout.count("violation") == 1
 
     def test_multiple_files(self, tmp_path):
         (tmp_path / "a.py").write_text('d = {}\nd["k"] = 1\n')
         (tmp_path / "b.py").write_text("x = 1\n")
         result = _run_check(str(tmp_path / "a.py"), str(tmp_path / "b.py"))
         assert result.returncode == 1
-        assert "no-subscript-mutation" in result.stdout
+        assert result.stdout.count("no-subscript-mutation") == 1
 
     def test_no_subcommand_exits_with_help(self):
         result = _run_bare()
@@ -82,7 +85,7 @@ class TestCLI:
         f.write_text('d = {}\nd.__setitem__("k", 1)\n')
         result = _run_check(str(f))
         assert result.returncode == 1
-        assert "no-setitem-call" in result.stdout
+        assert result.stdout.count("no-setitem-call") == 1
 
 
 class TestJSONOutput:
@@ -102,7 +105,7 @@ class TestJSONOutput:
         assert data["violation_count"] > 0
         v = data["violations"][0]
         assert set(v.keys()) == {"rule", "file", "line", "message"}
-        assert isinstance(v["line"], int)
+        assert (v["rule"], v["line"]) == ("no-subscript-mutation", 2)
 
     def test_json_output_is_valid_json(self, dirty_file):
         result = _run_bare("--format", "json", "check", dirty_file)
@@ -122,7 +125,7 @@ class TestDirectoryAndGlob:
         result = _run_bare("--format", "json", "check", str(tmp_path))
         data = json.loads(result.stdout)
         assert data["violation_count"] >= 1
-        assert any(v["rule"] == "no-list-append" for v in data["violations"])
+        assert [v["rule"] for v in data["violations"]].count("no-list-append") == 1
 
     def test_glob_pattern(self, tmp_path):
         (tmp_path / "a.py").write_text("x = []\nx.append(1)\n")
@@ -131,7 +134,7 @@ class TestDirectoryAndGlob:
         result = _run_bare("--format", "json", "check", str(tmp_path / "*.py"))
         data = json.loads(result.stdout)
         assert data["violation_count"] >= 1
-        assert all(v["file"].endswith(".py") for v in data["violations"])
+        assert {os.path.basename(v["file"]) for v in data["violations"]} == {"a.py"}
 
     def test_mix_files_and_dirs(self, tmp_path):
         d = tmp_path / "src"
@@ -149,18 +152,20 @@ class TestRulesCommand:
     def test_rules_text(self):
         result = _run_bare("rules")
         assert result.returncode == 0
-        # Should list some rules (ast-grep, ruff, and beniget)
-        assert len(result.stdout) > 0
-        assert "ast-grep" in result.stdout
-        assert "ruff" in result.stdout
-        assert "beniget" in result.stdout
+        # Each rule is one "  [backend ] id" line; the text listing must carry
+        # exactly the rules `rules --format json` reports, backend by backend.
+        tags = Counter(
+            line.split("]")[0].strip(" [")
+            for line in result.stdout.splitlines()
+            if line.startswith("  [")
+        )
+        assert tags == Counter(r["backend"] for r in list_rules())
 
     def test_rules_json(self):
         result = _run_bare("--format", "json", "rules")
         assert result.returncode == 0
         data = json.loads(result.stdout)
-        assert isinstance(data, list)
-        assert len(data) > 0
+        assert [r["id"] for r in data] == [r["id"] for r in list_rules()]
         backends = {r["backend"] for r in data}
         assert backends == {"ast-grep", "ruff", "beniget"}
         for r in data:
@@ -169,10 +174,13 @@ class TestRulesCommand:
     def test_rules_includes_known_rules(self):
         result = _run_bare("--format", "json", "rules")
         data = json.loads(result.stdout)
-        ids = {r["id"] for r in data}
-        assert "no-list-append" in ids
-        assert "no-deep-nesting" in ids
-        assert "reassignment" in ids
+        ids = [r["id"] for r in data]
+        # One known rule per backend, each listed exactly once.
+        assert [ids.count(i) for i in ("no-list-append", "C901", "reassignment")] == [
+            1,
+            1,
+            1,
+        ]
 
 
 class TestSchemaCommand:
@@ -180,16 +188,13 @@ class TestSchemaCommand:
         result = _run_bare("schema")
         assert result.returncode == 0
         data = json.loads(result.stdout)
-        assert "check_output" in data
-        assert "rules_output" in data
+        assert set(data) == {"check_output", "precommit_ratchet_output", "rules_output"}
 
     def test_schema_describes_violations(self):
         result = _run_bare("schema")
         data = json.loads(result.stdout)
         props = data["check_output"]["properties"]
-        assert "passed" in props
-        assert "violations" in props
-        assert "violation_count" in props
+        assert set(props) == {"passed", "violations", "violation_count"}
 
 
 class TestSelfLint:
@@ -288,13 +293,13 @@ class TestBaselineCommand:
             str(repo / "absent.json"),
         )
         assert result.returncode == 2
-        assert "baseline update" in result.stderr
+        assert result.stderr.count("baseline update") == 1
 
     def test_no_baseline_anywhere_exits_two(self, tmp_path):
         repo = self._repo(tmp_path)
         result = self._run(repo, "baseline", "show", "--config", CONFIG)
         assert result.returncode == 2
-        assert "no baseline configured" in result.stderr
+        assert result.stderr.count("no baseline configured") == 1
 
     def test_update_into_a_missing_directory_exits_two(self, tmp_path):
         """M1: a raw FileNotFoundError traceback, not a one-line error."""
@@ -310,7 +315,7 @@ class TestBaselineCommand:
         )
         assert result.returncode == 2
         assert "Traceback" not in result.stderr
-        assert "cannot write baseline file" in result.stderr
+        assert result.stderr.count("cannot write baseline file") == 1
 
 
 class TestBaselineRefusesToGuess:
@@ -345,7 +350,7 @@ class TestBaselineRefusesToGuess:
         with pytest.raises(SystemExit) as exc:
             _run_baseline_update(self._Args(CONFIG, str(path)))
         assert exc.value.code == 2
-        assert not path.exists()
+        assert path.exists() is False
 
 
 class TestPrecommitRatchet:
@@ -434,9 +439,8 @@ class TestPrecommitRatchet:
         result = self._run(repo)
         assert result.returncode == 0
         assert json.loads((repo / "fp-baseline.json").read_text()) == {"total": 1}
-        assert "fp-baseline.json" in self._git_out(
-            repo, "diff", "--cached", "--name-only"
-        )
+        staged = self._git_out(repo, "diff", "--cached", "--name-only").split()
+        assert sorted(staged) == ["fp-baseline.json", "mod.py"]
 
     def test_no_tighten_passes_without_writing(self, tmp_path):
         repo = self._repo(tmp_path, self.DIRTIER, baseline_total=2)
@@ -474,10 +478,10 @@ class TestPrecommitRatchet:
             env=clean_env(PYTHONPATH=REPO_ROOT),
         )
         assert result.returncode == 1
-        assert "other.py" in result.stdout
+        assert result.stdout.count("other.py") == 2  # DIRTIER's two violations
         assert "mod.py" not in result.stdout
-        assert "1 further violation" in result.stdout
-        assert "did not stage" in result.stdout
+        assert result.stdout.count("1 further violation") == 1
+        assert result.stdout.count("did not stage") == 1
 
     def _run_text(self, repo, *args):
         return subprocess.run(
@@ -501,16 +505,16 @@ class TestPrecommitRatchet:
         repo = self._repo(tmp_path, self.DIRTY, baseline_total=5)
         result = self._run_text(repo, "--no-tighten")
         assert result.returncode == 0
-        assert "ratchet: 5 → 1 (-4)" in result.stdout
-        assert "--no-tighten" in result.stdout
-        assert "baseline update" in result.stdout
+        assert result.stdout.count("ratchet: 5 → 1 (-4)") == 1
+        assert result.stdout.count("--no-tighten") == 1
+        assert result.stdout.count("baseline update") == 1
 
     def test_regression_with_nothing_staged_names_the_violations(self, tmp_path):
         """I2: the CI case. Filtering to a staged set of none printed nothing."""
         repo = self._repo(tmp_path, self.DIRTIER, baseline_total=1)
         result = self._run_text(repo, "--no-tighten")
         assert result.returncode == 1
-        assert "ratchet: 1 → 2 (+1)" in result.stdout
+        assert result.stdout.count("ratchet: 1 → 2 (+1)") == 1
         assert result.stdout.count("mod.py:") == 2
         assert "further violation" not in result.stdout
 
@@ -533,7 +537,7 @@ class TestPrecommitRatchet:
             env=clean_env(PYTHONPATH=REPO_ROOT),
         )
         assert result.returncode == 1
-        assert "… and 1 more (run `check` for the full list)" in result.stdout
+        assert result.stdout.count("… and 1 more (run `check` for the full list)") == 1
 
     def test_json_counts_do_not_contradict_each_other(self, tmp_path):
         """I3: violation_count is the repo; the array has its own count."""
@@ -561,7 +565,7 @@ class TestPrecommitRatchet:
         )
         result = self._run_text(repo, "--no-tighten")
         assert result.returncode == 1
-        assert "ratchet: 1 → 2 (+1)" in result.stdout
+        assert result.stdout.count("ratchet: 1 → 2 (+1)") == 1
         assert result.stdout.count("mod.py:") == 2
         assert "did not stage" not in result.stdout
 
@@ -587,7 +591,7 @@ class TestPrecommitRatchet:
             check=True,
             env=clean_env(),
         )
-        assert not (repo / "away" / "b.py").exists()  # skip-worktree
+        assert (repo / "away" / "b.py").exists() is False  # skip-worktree
 
         result = self._run(repo)
         assert result.returncode == 0, result.stdout + result.stderr
@@ -625,7 +629,7 @@ class TestPrecommitRatchet:
         result = self._run(repo)
         assert result.returncode == 2
         assert "Traceback" not in result.stderr
-        assert "unmerged" in result.stderr
+        assert result.stderr.count("unmerged") == 1
 
     def test_json_with_nothing_staged_lists_the_violations(self, tmp_path):
         repo = self._repo(tmp_path, self.DIRTIER, baseline_total=1)
@@ -656,8 +660,14 @@ class TestRatchetSchema:
 
     def test_describes_both_counts(self):
         props = self._schema()["precommit_ratchet_output"]["properties"]
-        assert "reported_violation_count" in props
-        assert "NOT the length" in props["violation_count"]["description"]
+        assert set(props) == {
+            "passed",
+            "ratchet",
+            "reported_violation_count",
+            "violation_count",
+            "violations",
+        }
+        assert props["violation_count"]["description"].count("NOT the length") == 1
 
 
 class TestBaselineFlagScope:
@@ -682,7 +692,7 @@ class TestBaselineFlagScope:
             env=clean_env(PYTHONPATH=REPO_ROOT),
         )
         assert result.returncode == 2
-        assert "unrecognized arguments: --baseline" in result.stderr
+        assert result.stderr.count("unrecognized arguments: --baseline") == 1
 
     def test_precommit_and_baseline_still_accept_it(self):
         for argv in (
@@ -696,7 +706,8 @@ class TestBaselineFlagScope:
                 text=True,
                 env=clean_env(PYTHONPATH=REPO_ROOT),
             )
-            assert "--baseline" in result.stdout, argv
+            # Once in the usage line, once in the options list.
+            assert result.stdout.count("--baseline") == 2, argv
 
 
 class TestPrecommitWithoutBaselineIsUnchanged:
@@ -777,5 +788,4 @@ class TestPrecommitWithoutBaselineIsUnchanged:
             _run_precommit(Args())
         assert exc.value.code == 2
         err = capsys.readouterr().err
-        assert "required lint backend(s) not found" in err
-        assert "config" not in err.lower()
+        assert err == "error: required lint backend(s) not found: ruff\n"

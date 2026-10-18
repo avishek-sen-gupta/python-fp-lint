@@ -2,7 +2,6 @@
 """Round-trip tests for install/uninstall-precommit-black.sh."""
 
 import os
-import re
 import subprocess
 import sys
 
@@ -79,7 +78,8 @@ class TestFreshRepo:
     def test_pins_a_real_release_tag(self, repo, bin_dir):
         """Black tags carry no `v` prefix, unlike pyright-python's."""
         _install(repo, bin_dir)
-        assert re.fullmatch(r"\d+\.\d+\.\d+", str(_block(repo)["rev"]))
+        parts = str(_block(repo)["rev"]).split(".")
+        assert [p.isdigit() for p in parts] == [True, True, True]
 
     def test_removes_everything_the_installer_created(self, repo, bin_dir):
         _install(repo, bin_dir)
@@ -105,7 +105,7 @@ class TestFreshRepo:
     def test_refuses_outside_a_git_repo_root(self, tmp_path, bin_dir):
         result = _sh(INSTALL, tmp_path, bin_dir)
         assert result.returncode == 1
-        assert "not a git repository root" in result.stderr
+        assert result.stderr.count("not a git repository root") == 1
 
 
 class TestSeedsNoConfig:
@@ -143,7 +143,7 @@ class TestExistingPreCommitConfig:
         config = repo / ".pre-commit-config.yaml"
         config.write_text(self.ORIGINAL)
         _install(repo, bin_dir)
-        assert BLACK_URL in config.read_text()
+        assert config.read_text().count(BLACK_URL) == 1
         _uninstall(repo, bin_dir)
         assert config.read_text() == self.ORIGINAL
 
@@ -228,8 +228,8 @@ class TestCoexistsWithTheOtherGates:
         _install(repo, bin_dir)
         _uninstall(repo, bin_dir)
         assert self._urls(repo) == {LINT_URL, PYRIGHT_URL}
-        assert (repo / "pyrightconfig.json").exists()
-        assert (repo / "fp.json").exists()
+        assert (repo / "pyrightconfig.json").exists() is True
+        assert (repo / "fp.json").exists() is True
 
 
 @pytest.fixture
@@ -264,8 +264,9 @@ class TestHooksPathBlocksActivation:
     def test_finishes_cleanly_and_names_the_path(self, repo, bin_dir, fake_pre_commit):
         self._set_hooks_path(repo, self.FOREIGN)
         result = _install(repo, bin_dir)
-        assert "NOT activated" in result.stdout
-        assert self.FOREIGN in result.stdout
+        assert result.stdout.count("NOT activated") == 1
+        # Named once as the setting, once in "make the hooks in ... call pre-commit".
+        assert result.stdout.count(self.FOREIGN) == 2
 
     def test_does_not_try_to_install_the_git_hook(self, repo, bin_dir, fake_pre_commit):
         self._set_hooks_path(repo, self.FOREIGN)
@@ -300,7 +301,7 @@ class TestHooksPathBlocksActivation:
             '[ "$1" = install ] && exit 1\nexit 0\n'
         )
         result = _install(repo, bin_dir)
-        assert "NOT activated" in result.stdout
+        assert result.stdout.count("NOT activated") == 1
 
 
 class TestPinsTheLatestRelease:
@@ -320,4 +321,4 @@ class TestPinsTheLatestRelease:
         )
         result = _install(repo, bin_dir)
         assert fake_pre_commit.read_text().splitlines()[-1] == "install"
-        assert "could not update rev" in result.stdout
+        assert result.stdout.count("could not update rev") == 1

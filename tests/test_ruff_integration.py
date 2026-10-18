@@ -1,5 +1,6 @@
 """Tests for Ruff backend integration in LintGate."""
 
+import os
 import shutil
 
 import pytest
@@ -42,7 +43,7 @@ class TestRunRuff:
             _DEFAULT_RUFF_SELECT,
             _DEFAULT_MAX_COMPLEXITY,
         )
-        assert any(v.rule == "E722" for v in violations)
+        assert [v.rule for v in violations].count("E722") == 1
 
     def test_detects_print(self, tmp_path):
         f = tmp_path / "prints.py"
@@ -53,7 +54,7 @@ class TestRunRuff:
             _DEFAULT_RUFF_SELECT,
             _DEFAULT_MAX_COMPLEXITY,
         )
-        assert any(v.rule == "T201" for v in violations)
+        assert [v.rule for v in violations].count("T201") == 1
 
     def test_detects_relative_import(self, tmp_path):
         f = tmp_path / "rel.py"
@@ -64,7 +65,7 @@ class TestRunRuff:
             _DEFAULT_RUFF_SELECT,
             _DEFAULT_MAX_COMPLEXITY,
         )
-        assert any(v.rule == "TID252" for v in violations)
+        assert [v.rule for v in violations].count("TID252") == 1
 
     def test_clean_file_no_violations(self, tmp_path):
         f = tmp_path / "clean.py"
@@ -87,7 +88,7 @@ class TestRunRuff:
             _DEFAULT_MAX_COMPLEXITY,
         )
         v = next(v for v in violations if v.rule == "E722")
-        assert "bare.py" in v.file
+        assert os.path.basename(v.file) == "bare.py"
         assert v.line > 0
         assert v.message != ""
 
@@ -122,4 +123,4 @@ class TestRunRuff:
             _DEFAULT_RUFF_SELECT,
             _DEFAULT_MAX_COMPLEXITY,
         )
-        assert any(v.rule == "F401" for v in violations)
+        assert [v.rule for v in violations].count("F401") == 1

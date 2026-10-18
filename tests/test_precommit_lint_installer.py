@@ -62,9 +62,9 @@ class TestFreshRepo:
     def test_removes_everything_the_installer_created(self, repo, bin_dir):
         _install(repo, bin_dir)
         _uninstall(repo, bin_dir)
-        assert not (repo / ".pre-commit-config.yaml").exists()
-        assert not (repo / ".python-fp-lint").exists()
-        assert not (repo / "fp.json").exists()
+        assert (repo / ".pre-commit-config.yaml").exists() is False
+        assert (repo / ".python-fp-lint").exists() is False
+        assert (repo / "fp.json").exists() is False
 
     def test_is_a_no_op_when_nothing_is_installed(self, repo, bin_dir):
         _uninstall(repo, bin_dir)
@@ -79,7 +79,7 @@ class TestFreshRepo:
     def test_refuses_outside_a_git_repo_root(self, tmp_path, bin_dir):
         result = _sh(UNINSTALL, tmp_path, bin_dir)
         assert result.returncode == 1
-        assert "not a git repository root" in result.stderr
+        assert result.stderr.count("not a git repository root") == 1
 
 
 def _hooks(repo):
@@ -151,7 +151,7 @@ class TestTracksMain:
         )
         result = _install(repo, bin_dir)
         assert fake_pre_commit.read_text().splitlines()[-1] == "install"
-        assert "could not update rev" in result.stdout
+        assert result.stdout.count("could not update rev") == 1
 
 
 class TestExistingPreCommitConfig:
@@ -170,7 +170,7 @@ class TestExistingPreCommitConfig:
         config = repo / ".pre-commit-config.yaml"
         config.write_text(self.ORIGINAL)
         _install(repo, bin_dir)
-        assert REPO_URL in config.read_text()
+        assert config.read_text().count(REPO_URL) == 1
         _uninstall(repo, bin_dir)
         assert config.read_text() == self.ORIGINAL
 

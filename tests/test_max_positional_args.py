@@ -168,7 +168,7 @@ class TestCli:
         config = _write_config(tmp_path, max_positional_args=10)
         result = _run("check", "--config", config, "--max-positional-args", "4", target)
         assert result.returncode == 1
-        assert "PLR0917" in result.stdout
+        assert result.stdout.count("PLR0917") == 1
 
     def test_flag_relaxes_the_default(self, tmp_path):
         target = _source(tmp_path, "five.py", _FIVE)
@@ -220,7 +220,7 @@ class TestEntryPoints:
             cwd=str(tmp_path),
         )
         assert strict.returncode == 1
-        assert "PLR0917" in strict.stdout
+        assert strict.stdout.count("PLR0917") == 1
 
     def test_hook_check_honours_the_config_file(self, tmp_path):
         from python_fp_lint.hook_check import check_tool_event

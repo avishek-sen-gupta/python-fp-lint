@@ -1,7 +1,15 @@
 id: no-any-type
 language: python
 rule:
+  # The innermost type node naming Any. Every enclosing generic is a type node
+  # whose text contains it too, so without the `not` one Any in
+  # list[dict[str, Any]] is reported three times.
   kind: type
   regex: "\\bAny\\b"
+  not:
+    has:
+      kind: type
+      regex: "\\bAny\\b"
+      stopBy: end
 message: "Avoid Any — use a precise type, Protocol, TypeVar, or a union of concrete types"
 severity: warning

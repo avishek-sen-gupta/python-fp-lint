@@ -170,8 +170,8 @@ class TestIncompleteMaterialization:
         _git(repo, "add", "-A")
         _git(repo, "commit", "-qm", "two trees")
         _git(repo, "sparse-checkout", "set", "keep")
-        assert not (repo / "away" / "b.py").exists()  # skip-worktree, not on disk
-        assert "S " in _git(repo, "ls-files", "-v", "away/b.py")
+        assert (repo / "away" / "b.py").exists() is False  # skip-worktree, not on disk
+        assert _git(repo, "ls-files", "-v", "away/b.py").split() == ["S", "away/b.py"]
         assert _total(repo) == 2  # counted from the index all the same
 
     def test_sparse_checkout_materializes_the_excluded_file(self, repo, tmp_path):
@@ -202,13 +202,15 @@ class TestIncompleteMaterialization:
         subprocess.run(
             ["git", "merge", "other"], cwd=repo, capture_output=True, env=clean_env()
         )
-        assert "UU" in _git(repo, "status", "--short")
+        assert _git(repo, "status", "--short").splitlines() == ["UU conflict.py"]
 
         with pytest.raises(ratchet.RatchetError) as exc:
             _total(repo)
         # One path, named plainly -- `ls-files -u` reports three stage lines
         # prefixed with mode/sha/stage, and none of that belongs in the error.
-        assert "1 unmerged path(s), starting with conflict.py" in str(exc.value)
+        assert (
+            str(exc.value).count("1 unmerged path(s), starting with conflict.py") == 1
+        )
 
     def test_a_shortfall_raises_rather_than_undercounting(self, repo, monkeypatch):
         """Whatever the cause, a file git did not write must not be a windfall.
@@ -360,7 +362,7 @@ class TestVerdict:
         path = self._baseline(repo, 10)
         ratchet.apply(str(repo), path, total=7)
         staged = _git(repo, "diff", "--cached", "--name-only")
-        assert "fp-baseline.json" in staged
+        assert staged.split() == ["fp-baseline.json"]
 
     def test_no_tighten_leaves_the_file_alone(self, repo):
         path = self._baseline(repo, 10)

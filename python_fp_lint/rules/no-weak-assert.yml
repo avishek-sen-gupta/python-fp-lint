@@ -7,8 +7,12 @@ rule:
     - pattern: assert len($X) >= 1
     - pattern: assert $X in $Y
     - pattern: assert not $X
+    # A bare name, attribute or call as the condition. nthChild: 1 is the
+    # condition; without it the failure message (`assert x == 0, result.stderr`)
+    # matched too.
     - kind: assert_statement
       has:
+        nthChild: 1
         any:
           - kind: identifier
           - kind: attribute

@@ -84,7 +84,7 @@ class TestStagedDiscovery:
         [(materialized, rel)] = mapping.items()
         assert rel == "mod.py"
         content = Path(materialized).read_text()
-        assert "staged = 2" in content
+        assert content.count("staged = 2") == 1
         assert "worktree_only" not in content
 
     def test_materialize_copies_a_non_utf8_blob_verbatim(self, repo, tmp_path):
@@ -124,7 +124,9 @@ class TestPrecommitCLI:
         result = _run_precommit(repo)
         assert result.returncode == 1
         data = json.loads(result.stdout)
-        assert any(v["rule"] == "no-subscript-mutation" for v in data["violations"])
+        assert [v["rule"] for v in data["violations"]].count(
+            "no-subscript-mutation"
+        ) == 1
         assert data["violations"][0]["file"] == "bad.py"
 
     def test_preexisting_violation_also_blocks(self, repo):
@@ -139,7 +141,9 @@ class TestPrecommitCLI:
         result = _run_precommit(repo)
         assert result.returncode == 1
         data = json.loads(result.stdout)
-        assert any(v["rule"] == "no-subscript-mutation" for v in data["violations"])
+        assert [v["rule"] for v in data["violations"]].count(
+            "no-subscript-mutation"
+        ) == 1
 
     def test_untouched_file_does_not_block(self, repo):
         """A dirty file that isn't staged is irrelevant to this commit."""

@@ -78,8 +78,8 @@ class TestConfigAppliedByGate:
         result = LintGate(locations=Locations(config_path=path)).evaluate(
             [str(target)], str(tmp_path)
         )
-        rules = {v.rule for v in result.violations}
-        assert "T201" in rules
+        rules = [v.rule for v in result.violations]
+        assert rules.count("T201") == 1
         assert "F401" not in rules
 
     def test_ast_grep_rules_from_config_narrows_rules(self, tmp_path):
@@ -89,8 +89,8 @@ class TestConfigAppliedByGate:
         result = LintGate(locations=Locations(config_path=path)).evaluate(
             [str(target)], str(tmp_path)
         )
-        rules = {v.rule for v in result.violations}
-        assert "no-list-append" in rules
+        rules = [v.rule for v in result.violations]
+        assert rules.count("no-list-append") == 1
         assert "no-subscript-mutation" not in rules
 
     def test_constructor_argument_beats_config(self, tmp_path):
@@ -101,8 +101,8 @@ class TestConfigAppliedByGate:
             locations=Locations(config_path=path),
             settings=LintSettings(ruff_select="F"),
         )
-        rules = {v.rule for v in gate.evaluate([str(target)], str(tmp_path)).violations}
-        assert "F401" in rules
+        rules = [v.rule for v in gate.evaluate([str(target)], str(tmp_path)).violations]
+        assert rules.count("F401") == 1
         assert "T201" not in rules
 
 
@@ -112,19 +112,24 @@ class TestConfigRequiredOnCLI:
         target.write_text("x = 1\n")
         result = _run("check", str(target))
         assert result.returncode == 2
-        assert "--config" in result.stderr
+        assert result.stderr.splitlines()[-1] == (
+            "python-fp-lint check: error: the following arguments are required: --config"
+        )
 
     def test_precommit_without_config_is_a_usage_error(self):
         result = _run("precommit")
         assert result.returncode == 2
-        assert "--config" in result.stderr
+        assert result.stderr.splitlines()[-1] == (
+            "python-fp-lint precommit: error: "
+            "the following arguments are required: --config"
+        )
 
     def test_missing_config_file_exits_two_without_traceback(self, tmp_path):
         target = tmp_path / "a.py"
         target.write_text("x = 1\n")
         result = _run("check", "--config", str(tmp_path / "nope.json"), str(target))
         assert result.returncode == 2
-        assert "config file not found" in result.stderr
+        assert result.stderr.count("config file not found") == 1
         assert "Traceback" not in result.stderr
 
     def test_malformed_config_file_exits_two_without_traceback(self, tmp_path):
@@ -134,7 +139,7 @@ class TestConfigRequiredOnCLI:
         bad.write_text("{not json")
         result = _run("check", "--config", str(bad), str(target))
         assert result.returncode == 2
-        assert "cannot read config file" in result.stderr
+        assert result.stderr.count("cannot read config file") == 1
         assert "Traceback" not in result.stderr
 
     def test_rules_and_schema_need_no_config(self):
@@ -243,8 +248,8 @@ class TestConfiguredRulesDirWins:
         )
 
         assert copied == [], "configured rules dir must not be materialized"
-        assert any(v.rule == "no-list-append" for v in result.violations)
-        assert os.path.isdir(rules)
+        assert [v.rule for v in result.violations].count("no-list-append") == 1
+        assert os.path.isdir(rules) is True
 
     def test_deleting_a_configured_rule_disables_it(self, tmp_path):
         """Proves the configured dir -- not the package copy -- is in play."""
@@ -258,4 +263,4 @@ class TestConfiguredRulesDirWins:
             [str(target)], str(tmp_path)
         )
 
-        assert not any(v.rule == "no-list-append" for v in result.violations)
+        assert [v.rule for v in result.violations].count("no-list-append") == 0

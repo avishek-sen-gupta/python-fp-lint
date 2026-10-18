@@ -1,7 +1,13 @@
 id: no-object-type
 language: python
 rule:
+  # The innermost type node naming object; see no-any-type for why.
   kind: type
   regex: "\\bobject\\b"
+  not:
+    has:
+      kind: type
+      regex: "\\bobject\\b"
+      stopBy: end
 message: "Avoid object — an untyped blob is Any with extra steps; use a precise type, Protocol, or union"
 severity: warning
