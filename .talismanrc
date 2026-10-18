@@ -56,4 +56,8 @@ fileignoreconfig:
   checksum: ade29e91834317d4cf8b5d8744fecae8f09efe351d262cd2794b9f1f33e5c9e8
 - filename: tests/test_result.py
   checksum: 61a987ddfdf83e574be50b02864e92d5ef98d1944f8c875995d35b59f898b2c5
+- filename: docs/superpowers/specs/2026-10-19-resolved-settings-and-ratchet-protocol-design.md
+  checksum: e9c7305631ed0d412eb19b800e548aaa6af51eaba142cef94958794a00dab76c
+- filename: docs/superpowers/plans/2026-10-19-resolved-settings-and-ratchet-protocol.md
+  checksum: f327637fb1e773fff417684d1e78369af6fdd99020d671cb094c9b5dc40f22eb
 version: "1.0"
