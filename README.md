@@ -223,15 +223,25 @@ uv run python -m python_fp_lint check --config fp.json --max-positional-args 6 s
 **Python API:**
 
 ```python
+from python_fp_lint import LintGate, LintSettings, Locations
+
 gate = LintGate(
-    ruff_select="E,F",
-    ast_grep_rules=["no-list-append"],
-    exclude=["generated/"],
-    max_complexity=5,
-    max_statements=20,
-    max_positional_args=6,
+    locations=Locations(config_path="fp.json"),
+    settings=LintSettings(
+        ruff_select="E,F",
+        ast_grep_rules=["no-list-append"],
+        exclude=["generated/"],
+        max_complexity=5,
+        max_statements=20,
+        max_positional_args=6,
+    ),
 )
 ```
+
+`LintGate` takes two frozen dataclasses, both by keyword. `Locations` says where the gate finds
+its inputs: `config_path`, `rules_dir`, `rules_cache_root` and `baseline`. `LintSettings` says
+what it enforces, and each field set there overrides the same key in the config file. Either
+can be omitted.
 
 Omitting a key (or passing `None`) uses the built-in default: for Ruff, the codes listed under
 [Ruff rules](#ruff-rules-batteries-included--fp-specific); for ast-grep, every rule file in the rules
@@ -255,7 +265,7 @@ view that a function past three branches wants decomposing. Set it wherever you
 like:
 
 ```jsonc
-{ "max_complexity": 5 }   // or --max-complexity 5, or LintGate(max_complexity=5)
+{ "max_complexity": 5 }   // or --max-complexity 5, or LintSettings(max_complexity=5)
 ```
 
 `0` fails every function and is accepted (it is occasionally useful for surveying
@@ -295,7 +305,7 @@ view that drives `max_complexity`: a long method wants decomposing. Set it where
 like:
 
 ```jsonc
-{ "max_statements": 20 }   // or --max-statements 20, or LintGate(max_statements=20)
+{ "max_statements": 20 }   // or --max-statements 20, or LintSettings(max_statements=20)
 ```
 
 `0` fails every function that has a body and is accepted; a negative or non-integer value
@@ -329,7 +339,7 @@ keyword-only, so call sites name them, or to group related ones into a frozen da
 Set the ceiling wherever you like:
 
 ```jsonc
-{ "max_positional_args": 6 }   // or --max-positional-args 6, or LintGate(max_positional_args=6)
+{ "max_positional_args": 6 }   // or --max-positional-args 6, or LintSettings(max_positional_args=6)
 ```
 
 `0` fails every function that takes a positional parameter and is accepted; a negative or
@@ -411,7 +421,7 @@ Exit codes: `0` = no violations, `1` = violations found.
 ```python
 from python_fp_lint import LintGate, LintResult, LintViolation
 
-# Unified gate — runs ast-grep + Ruff + beniget
+# Unified gate, all defaults; see "Configuring rules" for Locations and LintSettings — runs ast-grep + Ruff + beniget
 result = LintGate().evaluate(["src/app.py"], project_root=".")
 
 for v in result.violations:
@@ -915,10 +925,11 @@ python_fp_lint/
 ├── rules_meta.py          # Rule metadata reader (for CLI rules/schema commands)
 ├── precommit.py           # Staged-blob linting for the git commit gate
 ├── hook_check.py          # PreToolUse event handling behind `hook-check`
+├── output.py              # emit() for command output; CLI logging for diagnostics
 ├── patterns_report.py     # Standalone formatter for raw `sg scan --json` output (unused by the CLI)
 ├── ratchet.py             # Whole-index total, verdict and auto-tighten
 ├── baseline.py            # The ratchet's baseline file and path resolution
-├── __init__.py            # Public API: LintGate, LintResult, LintViolation
+├── __init__.py            # Public API: LintGate, Locations, LintSettings, LintResult, LintViolation
 ├── __main__.py            # CLI entry point (text + JSON output)
 ├── sgconfig.yml           # ast-grep configuration
 ├── rules/                 # 36 ast-grep rule files (.yml)

@@ -6,7 +6,7 @@ import json
 import pytest
 
 from python_fp_lint import baseline
-from python_fp_lint.lint_gate import LintGate
+from python_fp_lint.lint_gate import LintGate, Locations
 
 
 class TestReadWrite:
@@ -115,16 +115,21 @@ class TestGateResolution:
     def test_constructor_beats_config_file(self, tmp_path):
         cfg = tmp_path / "fp.json"
         cfg.write_text(json.dumps({"baseline": "from-config.json"}))
-        gate = LintGate(config_path=str(cfg), baseline="/tmp/from-ctor.json")
+        gate = LintGate(
+            locations=Locations(config_path=str(cfg), baseline="/tmp/from-ctor.json")
+        )
         assert gate.resolve_baseline() == "/tmp/from-ctor.json"
 
     def test_falls_back_to_config_file(self, tmp_path):
         cfg = tmp_path / "fp.json"
         cfg.write_text(json.dumps({"baseline": "b.json"}))
-        gate = LintGate(config_path=str(cfg))
+        gate = LintGate(locations=Locations(config_path=str(cfg)))
         assert gate.resolve_baseline() == str(tmp_path / "b.json")
 
     def test_none_when_nothing_configured(self, tmp_path):
         cfg = tmp_path / "fp.json"
         cfg.write_text("{}")
-        assert LintGate(config_path=str(cfg)).resolve_baseline() is None
+        assert (
+            LintGate(locations=Locations(config_path=str(cfg))).resolve_baseline()
+            is None
+        )

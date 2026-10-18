@@ -9,6 +9,8 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import cache
 
 from python_fp_lint import baseline as baseline_file
@@ -40,35 +42,50 @@ def _chunked(items: list[str], size: int = _MAX_PATHS_PER_CALL) -> list[list[str
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
+@dataclass(frozen=True)
+class Locations:
+    """Where the gate finds its inputs. An unset field falls back as documented
+    on each resolver: to the config file, a search, or no file at all."""
+
+    config_path: str | None = None
+    rules_dir: str | None = None
+    rules_cache_root: str | None = None
+    baseline: str | None = None
+
+
+@dataclass(frozen=True)
+class LintSettings:
+    """What the gate enforces. A set field overrides the config file; an unset
+    one defers to it, and then to the built-in default."""
+
+    ruff_select: str | None = None
+    ast_grep_rules: Sequence[str] | None = None
+    exclude: Sequence[str] | None = None
+    max_complexity: int | None = None
+    max_statements: int | None = None
+    max_positional_args: int | None = None
+
+
+# Shared defaults for LintGate's parameters. Frozen, so one instance is safe to
+# share, and named, so the signature carries no call (Ruff B008) and no None.
+_NO_LOCATIONS = Locations()
+_NO_SETTINGS = LintSettings()
+
+
 class LintGate:
     """Unified lint gate — runs ast-grep, Ruff, and beniget reassignment detection."""
 
     def __init__(
         self,
-        rules_dir: str | None = None,
-        ruff_select: str | None = None,
-        ast_grep_rules: list[str] | None = None,
-        rules_cache_root: str | None = None,
-        config_path: str | None = None,
-        exclude: list[str] | None = None,
-        max_complexity: int | None = None,
-        max_statements: int | None = None,
-        max_positional_args: int | None = None,
-        baseline: str | None = None,
+        *,
+        locations: Locations = _NO_LOCATIONS,
+        settings: LintSettings = _NO_SETTINGS,
     ):
-        self.rules_dir = rules_dir
-        self.ruff_select = ruff_select
-        self.ast_grep_rules = ast_grep_rules
-        self.rules_cache_root = rules_cache_root
-        self.config_path = config_path
-        self.exclude = exclude
-        self.max_complexity = max_complexity
-        self.max_statements = max_statements
-        self.max_positional_args = max_positional_args
-        self.baseline = baseline
+        self.locations = locations
+        self.settings = settings
 
     def _config(self, key):
-        return _read_config(key, self.config_path)
+        return _read_config(key, self.locations.config_path)
 
     def evaluate(self, changed_files: list[str], project_root: str) -> LintResult:
         py_files = self.filter_excluded(
@@ -86,8 +103,8 @@ class LintGate:
 
     def resolve_exclude(self) -> list[str]:
         """Exclude globs in force: constructor > config file > nothing."""
-        if self.exclude is not None:
-            return self.exclude
+        if self.settings.exclude is not None:
+            return list(self.settings.exclude)
         config_val = self._config("exclude")
         if config_val and isinstance(config_val, list):
             return config_val
@@ -96,7 +113,9 @@ class LintGate:
     def resolve_baseline(self) -> str | None:
         """Baseline file in force: constructor > config file > none."""
         return baseline_file.resolve_path(
-            self.baseline, self._config("baseline"), self.config_path
+            self.locations.baseline,
+            self._config("baseline"),
+            self.locations.config_path,
         )
 
     def is_excluded(self, path: str, project_root: str) -> bool:
@@ -111,8 +130,8 @@ class LintGate:
         return [f for f in files if not is_excluded(f, project_root, patterns)]
 
     def _resolve_ast_grep_rules(self) -> list[str] | None:
-        if self.ast_grep_rules is not None:
-            return self.ast_grep_rules
+        if self.settings.ast_grep_rules is not None:
+            return list(self.settings.ast_grep_rules)
         config_val = self._config("ast_grep_rules")
         if config_val and isinstance(config_val, list):
             return config_val
@@ -136,7 +155,7 @@ class LintGate:
         # path -- so it has to be copied out before scanning. A rules dir the
         # consumer pointed us at is used where it stands.
         scan_dir = (
-            _materialize_rules_dir(rules_dir, self.rules_cache_root)
+            _materialize_rules_dir(rules_dir, self.locations.rules_cache_root)
             if os.path.abspath(rules_dir) == _package_rules_dir()
             else rules_dir
         )
@@ -147,8 +166,8 @@ class LintGate:
         return violations
 
     def _resolve_ruff_select(self) -> str:
-        if self.ruff_select:
-            return self.ruff_select
+        if self.settings.ruff_select:
+            return self.settings.ruff_select
         config_select = self._config("ruff_select")
         if config_select:
             return config_select
@@ -156,8 +175,8 @@ class LintGate:
 
     def _resolve_max_complexity(self) -> int:
         """Complexity ceiling in force: constructor > config file > default."""
-        if self.max_complexity is not None:
-            return _validate_max_complexity(self.max_complexity)
+        if self.settings.max_complexity is not None:
+            return _validate_max_complexity(self.settings.max_complexity)
         config_val = self._config("max_complexity")
         if config_val is None:
             return _DEFAULT_MAX_COMPLEXITY
@@ -165,8 +184,8 @@ class LintGate:
 
     def _resolve_max_statements(self) -> int:
         """Statement ceiling in force: constructor > config file > default."""
-        if self.max_statements is not None:
-            return _validate_ceiling("max_statements", self.max_statements)
+        if self.settings.max_statements is not None:
+            return _validate_ceiling("max_statements", self.settings.max_statements)
         config_val = self._config("max_statements")
         if config_val is None:
             return _DEFAULT_MAX_STATEMENTS
@@ -174,8 +193,10 @@ class LintGate:
 
     def _resolve_max_positional_args(self) -> int:
         """Positional-parameter ceiling in force: constructor > config file > default."""
-        if self.max_positional_args is not None:
-            return _validate_ceiling("max_positional_args", self.max_positional_args)
+        if self.settings.max_positional_args is not None:
+            return _validate_ceiling(
+                "max_positional_args", self.settings.max_positional_args
+            )
         config_val = self._config("max_positional_args")
         if config_val is None:
             return _DEFAULT_MAX_POSITIONAL_ARGS
@@ -202,12 +223,12 @@ class LintGate:
 
     def _resolve_rules_dir(self, project_root: str) -> str | None:
         configured = self._config("lint_rules_dir")
-        if configured and self.config_path:
+        if configured and self.locations.config_path:
             # A relative lint_rules_dir is relative to the config file itself,
             # so a config can be checked in beside the rules it points at.
-            base = os.path.dirname(os.path.abspath(self.config_path))
+            base = os.path.dirname(os.path.abspath(self.locations.config_path))
             configured = os.path.join(base, configured)
-        return _resolve_rules_dir(self.rules_dir, project_root, configured)
+        return _resolve_rules_dir(self.locations.rules_dir, project_root, configured)
 
 
 # --- shared helpers ---

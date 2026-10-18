@@ -6,6 +6,7 @@ Designed for both human use (text output) and LLM agent use (--format json).
 
 import argparse
 import json
+import logging
 import subprocess
 import sys
 import tempfile
@@ -17,10 +18,20 @@ from python_fp_lint.lint_gate import (
     BackendError,
     ConfigError,
     LintGate,
+    LintSettings,
+    Locations,
     missing_backends,
 )
+from python_fp_lint.output import configure_cli_logging, emit
 from python_fp_lint.precommit import evaluate_staged, staged_python_files
 from python_fp_lint.rules_meta import list_rules
+
+# Not __name__: run as `python -m python_fp_lint` that is "__main__", outside
+# the package logger configure_cli_logging() sets up. Configured at import,
+# not in main(), so the commands' error lines reach stderr however they are
+# entered; this module is the CLI and is never imported as a library.
+log = logging.getLogger("python_fp_lint.cli")
+configure_cli_logging()
 
 
 def _split_list(value: str | None) -> list[str] | None:
@@ -32,14 +43,17 @@ def _split_list(value: str | None) -> list[str] | None:
 
 def _build_gate(args) -> LintGate:
     return LintGate(
-        ruff_select=args.ruff_select or None,
-        ast_grep_rules=_split_list(args.ast_grep_rules),
-        exclude=_split_list(getattr(args, "exclude", None)),
-        max_complexity=getattr(args, "max_complexity", None),
-        max_statements=getattr(args, "max_statements", None),
-        max_positional_args=getattr(args, "max_positional_args", None),
-        config_path=args.config or None,
-        baseline=getattr(args, "baseline", None),
+        locations=Locations(
+            config_path=args.config or None, baseline=getattr(args, "baseline", None)
+        ),
+        settings=LintSettings(
+            ruff_select=args.ruff_select or None,
+            ast_grep_rules=_split_list(args.ast_grep_rules),
+            exclude=_split_list(getattr(args, "exclude", None)),
+            max_complexity=getattr(args, "max_complexity", None),
+            max_statements=getattr(args, "max_statements", None),
+            max_positional_args=getattr(args, "max_positional_args", None),
+        ),
     )
 
 
@@ -47,10 +61,9 @@ def _resolve_baseline_or_exit(args) -> str:
     """The baseline path in force, or exit 2 -- these commands require one."""
     path = _build_gate(args).resolve_baseline()
     if path is None:
-        print(
+        log.error(
             "error: no baseline configured; pass --baseline PATH or set "
-            '"baseline" in the config file',
-            file=sys.stderr,
+            '"baseline" in the config file'
         )
         sys.exit(2)
     return path
@@ -65,10 +78,7 @@ def _require_backends() -> None:
     """
     missing = missing_backends()
     if missing:
-        print(
-            f"error: required lint backend(s) not found: {', '.join(missing)}",
-            file=sys.stderr,
-        )
+        log.error(f"error: required lint backend(s) not found: {', '.join(missing)}")
         sys.exit(2)
 
 
@@ -83,12 +93,9 @@ def _run_baseline_update(args):
     total = _current_total(args)
     baseline_file.write(path, total)
     if args.format == "json":
-        json.dump(
-            {"baseline": total, "total": total, "path": path}, sys.stdout, indent=2
-        )
-        print()
+        emit(json.dumps({"baseline": total, "total": total, "path": path}, indent=2))
     else:
-        print(f"baseline recorded: {total} violation(s) -> {path}")
+        emit(f"baseline recorded: {total} violation(s) -> {path}")
 
 
 def _run_baseline_show(args):
@@ -96,12 +103,9 @@ def _run_baseline_show(args):
     recorded = baseline_file.read(path)
     total = _current_total(args)
     if args.format == "json":
-        json.dump(
-            {"baseline": recorded, "total": total, "path": path}, sys.stdout, indent=2
-        )
-        print()
+        emit(json.dumps({"baseline": recorded, "total": total, "path": path}, indent=2))
     else:
-        print(f"baseline: {recorded}\ncurrent:  {total}\npath:     {path}")
+        emit(f"baseline: {recorded}\ncurrent:  {total}\npath:     {path}")
 
 
 def _enforce_strict(args) -> None:
@@ -132,16 +136,15 @@ def _report(result, fmt: str) -> None:
                 for v in violations
             ],
         }
-        json.dump(payload, sys.stdout, indent=2)
-        print()
+        emit(json.dumps(payload, indent=2))
     else:
         if not violations:
-            print("No violations found.")
+            emit("No violations found.")
         else:
             for v in violations:
                 loc = f"{v.file}:{v.line}" if v.line else v.file
-                print(f"  [{v.rule}] {loc} — {v.message}")
-            print(f"\n{len(violations)} violation(s) found.")
+                emit(f"  [{v.rule}] {loc} — {v.message}")
+            emit(f"\n{len(violations)} violation(s) found.")
 
     sys.exit(0 if result.passed else 1)
 
@@ -156,7 +159,7 @@ def _with_config_errors(run, args):
         ratchet.RatchetError,
         BackendError,
     ) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        log.error(f"error: {exc}")
         sys.exit(2)
 
 
@@ -173,7 +176,7 @@ def _git_repo_root() -> str:
         timeout=30,
     )
     if result.returncode != 0:
-        print("error: not inside a git repository", file=sys.stderr)
+        log.error("error: not inside a git repository")
         sys.exit(2)
     return result.stdout.strip()
 
@@ -228,28 +231,27 @@ def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
                 for v in reported
             ],
         }
-        json.dump(payload, sys.stdout, indent=2)
-        print()
+        emit(json.dumps(payload, indent=2))
     elif verdict.regressed:
-        print(f"ratchet: {verdict.recorded} → {verdict.total} (+{verdict.delta})")
+        emit(f"ratchet: {verdict.recorded} → {verdict.total} (+{verdict.delta})")
         for v in reported:
             loc = f"{v.file}:{v.line}" if v.line else v.file
-            print(f"  [{v.rule}] {loc} — {v.message}")
+            emit(f"  [{v.rule}] {loc} — {v.message}")
         if not remainder:
             pass
         elif is_local:
-            print(
+            emit(
                 f"\n{remainder} further violation(s) in the rest of the repo, "
                 "in files you did not stage."
             )
         else:
-            print(f"\n… and {remainder} more (run `check` for the full list)")
+            emit(f"\n… and {remainder} more (run `check` for the full list)")
     elif verdict.tightened:
-        print(f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta})")
+        emit(f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta})")
     elif verdict.dropped:
         # --no-tighten: the only way to reach a fall that was not recorded.
         # Silence here is how a baseline drifts above reality forever.
-        print(
+        emit(
             f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta}) "
             "— not tightened (--no-tighten); run `baseline update` to record it"
         )
@@ -312,13 +314,12 @@ def _run_rules(args):
     rules = list_rules()
 
     if args.format == "json":
-        json.dump(rules, sys.stdout, indent=2)
-        print()
+        emit(json.dumps(rules, indent=2))
     else:
         for r in rules:
             backend = r["backend"]
-            print(f"  [{backend:8s}] {r['id']}")
-            print(f"             {r['message']}")
+            emit(f"  [{backend:8s}] {r['id']}")
+            emit(f"             {r['message']}")
 
 
 _VIOLATION_SCHEMA = {
@@ -435,8 +436,7 @@ def _run_schema(_args):
             },
         },
     }
-    json.dump(schema, sys.stdout, indent=2)
-    print()
+    emit(json.dumps(schema, indent=2))
 
 
 def main():

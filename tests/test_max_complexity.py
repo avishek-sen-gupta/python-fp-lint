@@ -15,9 +15,11 @@ import pytest
 from gitenv import clean_env
 
 from python_fp_lint.lint_gate import (
-    _DEFAULT_MAX_COMPLEXITY,
     ConfigError,
     LintGate,
+    LintSettings,
+    Locations,
+    _DEFAULT_MAX_COMPLEXITY,
 )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -82,13 +84,17 @@ class TestDefaultThreshold:
     def test_function_over_the_default_is_flagged(self, tmp_path):
         target = _source(tmp_path, "four.py", _FOUR)
         config = _write_config(tmp_path)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _complexity_rules(result) == ["C901"]
 
     def test_function_at_the_default_passes(self, tmp_path):
         target = _source(tmp_path, "three.py", _THREE)
         config = _write_config(tmp_path)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _complexity_rules(result) == []
 
 
@@ -96,19 +102,26 @@ class TestResolution:
     def test_config_value_raises_the_ceiling(self, tmp_path):
         target = _source(tmp_path, "four.py", _FOUR)
         config = _write_config(tmp_path, max_complexity=10)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _complexity_rules(result) == []
 
     def test_config_value_lowers_the_ceiling(self, tmp_path):
         target = _source(tmp_path, "one.py", _ONE)
         config = _write_config(tmp_path, max_complexity=0)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _complexity_rules(result) == ["C901"]
 
     def test_constructor_beats_config(self, tmp_path):
         target = _source(tmp_path, "four.py", _FOUR)
         config = _write_config(tmp_path, max_complexity=10)
-        gate = LintGate(config_path=config, max_complexity=3)
+        gate = LintGate(
+            locations=Locations(config_path=config),
+            settings=LintSettings(max_complexity=3),
+        )
         result = gate.evaluate([target], str(tmp_path))
         assert _complexity_rules(result) == ["C901"]
 
@@ -117,25 +130,28 @@ class TestResolution:
 
     def test_config_value_is_resolved(self, tmp_path):
         config = _write_config(tmp_path, max_complexity=7)
-        assert LintGate(config_path=config)._resolve_max_complexity() == 7
+        assert (
+            LintGate(locations=Locations(config_path=config))._resolve_max_complexity()
+            == 7
+        )
 
 
 class TestInvalidValues:
     def test_non_integer_raises(self, tmp_path):
         config = _write_config(tmp_path, max_complexity="lots")
         with pytest.raises(ConfigError, match="max_complexity"):
-            LintGate(config_path=config)._resolve_max_complexity()
+            LintGate(locations=Locations(config_path=config))._resolve_max_complexity()
 
     def test_negative_raises(self, tmp_path):
         config = _write_config(tmp_path, max_complexity=-1)
         with pytest.raises(ConfigError, match="max_complexity"):
-            LintGate(config_path=config)._resolve_max_complexity()
+            LintGate(locations=Locations(config_path=config))._resolve_max_complexity()
 
     def test_bool_is_not_an_integer(self, tmp_path):
         """`true` is an int in Python but nonsense as a complexity ceiling."""
         config = _write_config(tmp_path, max_complexity=True)
         with pytest.raises(ConfigError, match="max_complexity"):
-            LintGate(config_path=config)._resolve_max_complexity()
+            LintGate(locations=Locations(config_path=config))._resolve_max_complexity()
 
 
 class TestCli:

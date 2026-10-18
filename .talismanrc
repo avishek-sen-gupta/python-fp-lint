@@ -5,7 +5,7 @@ fileignoreconfig:
 - filename: python_fp_lint/rules/no-subscript-tuple-mutation.yml
   checksum: bc4e007df83db563ef5b3ede3cf3a628d8262855b51a0bdd9d792c1ff4e91eb8
 - filename: python_fp_lint/lint_gate.py
-  checksum: 0f24939a5ae6d7fa39f4bc6d8103c9a563bed1559c41d0c4c7ae36d848645112
+  checksum: b68ade8e28b9cab3817fc3c911fdb55ce709b8e5abbc9bd1a3b4786ffc4135bf
 - filename: tests/test_lint_gate.py
   checksum: 9f467ff33170c9e4808a7ed69ad5db20fff6bf7f659b24edd0053b445476e643
 - filename: tests/test_ast_grep_rules.py
@@ -25,7 +25,7 @@ fileignoreconfig:
 - filename: python_fp_lint/precommit.py
   checksum: f29eb1359e8861cc6a6b59b85532d3398aff6d83d4e3eb5ec27a953e8993fe12
 - filename: tests/test_config.py
-  checksum: 7fb6e6342036f42ec808c04e3518e5ae2081cc6a0849751abad9e944d2b428a6
+  checksum: ec19b3b451ce0ea4e41ef1ffba07af526ed3492a2ffdb7770e6fdd55449a68b4
 - filename: install-precommit.sh
   checksum: 52bab58cdcaa4d7701fc816ffad3655f298d6c38d52116150511072b0eb7aa72
 - filename: tests/test_exclude.py

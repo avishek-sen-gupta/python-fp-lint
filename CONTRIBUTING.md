@@ -46,7 +46,9 @@ or later, or `PLR0917` silently stops applying.
 - Use enums instead of magic strings for fixed value sets.
 - Do not use `None` as a default parameter. Use an immutable empty value (`()`,
   `frozenset()`) or a sentinel object — not `[]` or `{}`, which Ruff's `B006` rejects.
-- Add logging (not `print`) for progress tracking, especially in loops and long-running tasks.
+- Never `print`. Command output (reports, JSON, the hook's message) goes through
+  `python_fp_lint.output.emit()`; diagnostics such as `error: ...` lines and progress go
+  through `logging`, under the `python_fp_lint` logger.
 
 ## Architecture
 

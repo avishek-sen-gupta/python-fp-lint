@@ -10,7 +10,7 @@ import pytest
 from gitenv import clean_env
 
 from python_fp_lint.hook_check import check_tool_event
-from python_fp_lint.lint_gate import LintGate, is_excluded
+from python_fp_lint.lint_gate import LintGate, LintSettings, Locations, is_excluded
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 
@@ -75,7 +75,9 @@ class TestExcludeFromConfig:
     def test_excluded_file_produces_no_violations(self, tmp_path):
         target = _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path, exclude=["generated/"])
-        result = LintGate(config_path=path).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=path)).evaluate(
+            [target], str(tmp_path)
+        )
         assert result.passed
         assert result.violations == []
 
@@ -83,7 +85,9 @@ class TestExcludeFromConfig:
         excluded = _dirty(tmp_path, "generated/api.py")
         kept = _dirty(tmp_path, "src/app.py")
         path = _write_config(tmp_path, exclude=["generated/"])
-        result = LintGate(config_path=path).evaluate([excluded, kept], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=path)).evaluate(
+            [excluded, kept], str(tmp_path)
+        )
         assert not result.passed
         assert {os.path.abspath(v.file) for v in result.violations} == {
             os.path.abspath(kept)
@@ -92,19 +96,27 @@ class TestExcludeFromConfig:
     def test_no_exclude_key_lints_everything(self, tmp_path):
         target = _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path)
-        assert not LintGate(config_path=path).evaluate([target], str(tmp_path)).passed
+        assert (
+            not LintGate(locations=Locations(config_path=path))
+            .evaluate([target], str(tmp_path))
+            .passed
+        )
 
     def test_directory_expansion_respects_exclusions(self, tmp_path):
         _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path, exclude=["generated/"])
         assert (
-            LintGate(config_path=path).evaluate([str(tmp_path)], str(tmp_path)).passed
+            LintGate(locations=Locations(config_path=path))
+            .evaluate([str(tmp_path)], str(tmp_path))
+            .passed
         )
 
     def test_constructor_argument_beats_config(self, tmp_path):
         target = _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path, exclude=["generated/"])
-        gate = LintGate(exclude=[], config_path=path)
+        gate = LintGate(
+            locations=Locations(config_path=path), settings=LintSettings(exclude=[])
+        )
         assert not gate.evaluate([target], str(tmp_path)).passed
 
 

@@ -8,7 +8,7 @@ import pytest
 from gitenv import clean_env
 
 from python_fp_lint import baseline, lint_gate, ratchet
-from python_fp_lint.lint_gate import LintGate
+from python_fp_lint.lint_gate import LintGate, LintSettings, Locations
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 CONFIG = os.path.join(REPO_ROOT, "config.example.json")
@@ -46,7 +46,7 @@ def repo(tmp_path):
 
 
 def _gate():
-    return LintGate(config_path=CONFIG)
+    return LintGate(locations=Locations(config_path=CONFIG))
 
 
 def _total(repo):
@@ -139,7 +139,10 @@ class TestTotal:
     def test_excluded_files_do_not_count(self, tmp_path, repo):
         (repo / "gen.py").write_text(DIRTY)
         _git(repo, "add", "gen.py")
-        gate = LintGate(config_path=CONFIG, exclude=["gen.py"])
+        gate = LintGate(
+            locations=Locations(config_path=CONFIG),
+            settings=LintSettings(exclude=["gen.py"]),
+        )
         assert ratchet.total_violations(str(repo), gate).violations == []
 
     def test_empty_repo_totals_zero(self, tmp_path):

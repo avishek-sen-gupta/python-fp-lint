@@ -11,7 +11,8 @@ import os
 import sys
 import tempfile
 
-from python_fp_lint.lint_gate import LintGate
+from python_fp_lint.lint_gate import LintGate, Locations
+from python_fp_lint.output import Stream, emit
 from python_fp_lint.result import LintViolation
 
 
@@ -88,16 +89,14 @@ _OUTCOME_BY_TOOL = {"Edit": _edit_outcome, "Write": _write_outcome}
 def _report_block(
     file_path: str, start_line: int, end_line: int, violations: list[LintViolation]
 ) -> None:
-    print(
+    emit(
         f"[lint-gate] Blocked: {len(violations)} FP violation(s) in edited range "
         f"(lines {start_line}-{end_line}) of {file_path}",
-        file=sys.stderr,
+        Stream.STDERR,
     )
     for v in violations:
-        print(f"  {v.rule}:{v.line}:{v.message}", file=sys.stderr)
-    print(
-        "\nFix the violations or disable the lint gate with /lint off", file=sys.stderr
-    )
+        emit(f"  {v.rule}:{v.line}:{v.message}", Stream.STDERR)
+    emit("\nFix the violations or disable the lint gate with /lint off", Stream.STDERR)
 
 
 def check_tool_event(
@@ -112,7 +111,7 @@ def check_tool_event(
     if outcome_of is None or not file_path.endswith(".py"):
         return 0
 
-    gate = LintGate(config_path=config_path)
+    gate = LintGate(locations=Locations(config_path=config_path))
     # The edit is judged by where the real file lives, not by the temp copy
     # that gets linted.
     if gate.is_excluded(file_path, os.getcwd()):

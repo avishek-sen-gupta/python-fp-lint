@@ -16,9 +16,11 @@ import pytest
 from gitenv import clean_env
 
 from python_fp_lint.lint_gate import (
-    _DEFAULT_MAX_STATEMENTS,
     ConfigError,
     LintGate,
+    LintSettings,
+    Locations,
+    _DEFAULT_MAX_STATEMENTS,
 )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -77,13 +79,17 @@ class TestDefaultThreshold:
     def test_function_over_the_default_is_flagged(self, tmp_path):
         target = _source(tmp_path, "eleven.py", _ELEVEN)
         config = _write_config(tmp_path)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _statement_rules(result) == ["PLR0915"]
 
     def test_function_at_the_default_passes(self, tmp_path):
         target = _source(tmp_path, "ten.py", _TEN)
         config = _write_config(tmp_path)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _statement_rules(result) == []
 
 
@@ -92,7 +98,9 @@ class TestCountsStatementsNotLines:
         """Semicolon-joined statements are still statements."""
         target = _source(tmp_path, "dense.py", _ELEVEN_ON_FEW_LINES)
         config = _write_config(tmp_path)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _statement_rules(result) == ["PLR0915"]
 
     def test_a_long_but_thin_function_passes(self, tmp_path):
@@ -101,7 +109,9 @@ class TestCountsStatementsNotLines:
         body = f"def thin(x):\n{padding}\n    y = (\n        x\n        + 1\n    )\n    return y\n"
         target = _source(tmp_path, "thin.py", body)
         config = _write_config(tmp_path)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _statement_rules(result) == []
 
 
@@ -109,19 +119,26 @@ class TestResolution:
     def test_config_value_raises_the_ceiling(self, tmp_path):
         target = _source(tmp_path, "eleven.py", _ELEVEN)
         config = _write_config(tmp_path, max_statements=50)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _statement_rules(result) == []
 
     def test_config_value_lowers_the_ceiling(self, tmp_path):
         target = _source(tmp_path, "one.py", _ONE)
         config = _write_config(tmp_path, max_statements=0)
-        result = LintGate(config_path=config).evaluate([target], str(tmp_path))
+        result = LintGate(locations=Locations(config_path=config)).evaluate(
+            [target], str(tmp_path)
+        )
         assert _statement_rules(result) == ["PLR0915"]
 
     def test_constructor_beats_config(self, tmp_path):
         target = _source(tmp_path, "eleven.py", _ELEVEN)
         config = _write_config(tmp_path, max_statements=50)
-        gate = LintGate(config_path=config, max_statements=10)
+        gate = LintGate(
+            locations=Locations(config_path=config),
+            settings=LintSettings(max_statements=10),
+        )
         result = gate.evaluate([target], str(tmp_path))
         assert _statement_rules(result) == ["PLR0915"]
 
@@ -130,25 +147,28 @@ class TestResolution:
 
     def test_config_value_is_resolved(self, tmp_path):
         config = _write_config(tmp_path, max_statements=25)
-        assert LintGate(config_path=config)._resolve_max_statements() == 25
+        assert (
+            LintGate(locations=Locations(config_path=config))._resolve_max_statements()
+            == 25
+        )
 
 
 class TestInvalidValues:
     def test_non_integer_raises(self, tmp_path):
         config = _write_config(tmp_path, max_statements="lots")
         with pytest.raises(ConfigError, match="max_statements"):
-            LintGate(config_path=config)._resolve_max_statements()
+            LintGate(locations=Locations(config_path=config))._resolve_max_statements()
 
     def test_negative_raises(self, tmp_path):
         config = _write_config(tmp_path, max_statements=-1)
         with pytest.raises(ConfigError, match="max_statements"):
-            LintGate(config_path=config)._resolve_max_statements()
+            LintGate(locations=Locations(config_path=config))._resolve_max_statements()
 
     def test_bool_is_not_an_integer(self, tmp_path):
         """`true` is an int in Python but nonsense as a statement ceiling."""
         config = _write_config(tmp_path, max_statements=True)
         with pytest.raises(ConfigError, match="max_statements"):
-            LintGate(config_path=config)._resolve_max_statements()
+            LintGate(locations=Locations(config_path=config))._resolve_max_statements()
 
 
 class TestCli:

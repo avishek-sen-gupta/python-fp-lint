@@ -16,9 +16,11 @@ import pytest
 from gitenv import clean_env
 
 from python_fp_lint.lint_gate import (
-    _DEFAULT_MAX_POSITIONAL_ARGS,
     ConfigError,
     LintGate,
+    LintSettings,
+    Locations,
+    _DEFAULT_MAX_POSITIONAL_ARGS,
 )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -71,7 +73,7 @@ def _positional_rules(result):
 
 def _evaluate(tmp_path, body, **config):
     target = _source(tmp_path, "target.py", body)
-    gate = LintGate(config_path=_write_config(tmp_path, **config))
+    gate = LintGate(locations=Locations(config_path=_write_config(tmp_path, **config)))
     return gate.evaluate([target], str(tmp_path))
 
 
@@ -116,7 +118,10 @@ class TestResolution:
     def test_constructor_beats_config(self, tmp_path):
         target = _source(tmp_path, "five.py", _FIVE)
         config = _write_config(tmp_path, max_positional_args=10)
-        gate = LintGate(config_path=config, max_positional_args=4)
+        gate = LintGate(
+            locations=Locations(config_path=config),
+            settings=LintSettings(max_positional_args=4),
+        )
         result = gate.evaluate([target], str(tmp_path))
         assert _positional_rules(result) == ["PLR0917"]
 
@@ -125,25 +130,36 @@ class TestResolution:
 
     def test_config_value_is_resolved(self, tmp_path):
         config = _write_config(tmp_path, max_positional_args=7)
-        assert LintGate(config_path=config)._resolve_max_positional_args() == 7
+        assert (
+            LintGate(
+                locations=Locations(config_path=config)
+            )._resolve_max_positional_args()
+            == 7
+        )
 
 
 class TestInvalidValues:
     def test_non_integer_raises(self, tmp_path):
         config = _write_config(tmp_path, max_positional_args="lots")
         with pytest.raises(ConfigError, match="max_positional_args"):
-            LintGate(config_path=config)._resolve_max_positional_args()
+            LintGate(
+                locations=Locations(config_path=config)
+            )._resolve_max_positional_args()
 
     def test_negative_raises(self, tmp_path):
         config = _write_config(tmp_path, max_positional_args=-1)
         with pytest.raises(ConfigError, match="max_positional_args"):
-            LintGate(config_path=config)._resolve_max_positional_args()
+            LintGate(
+                locations=Locations(config_path=config)
+            )._resolve_max_positional_args()
 
     def test_bool_is_not_an_integer(self, tmp_path):
         """`true` is an int in Python but nonsense as a parameter ceiling."""
         config = _write_config(tmp_path, max_positional_args=True)
         with pytest.raises(ConfigError, match="max_positional_args"):
-            LintGate(config_path=config)._resolve_max_positional_args()
+            LintGate(
+                locations=Locations(config_path=config)
+            )._resolve_max_positional_args()
 
 
 class TestCli:
