@@ -57,14 +57,14 @@ def layer_from_config_file(path: str) -> ConfigLayer:
     data = _as_object(_read_json(path), path)
     base = os.path.dirname(os.path.abspath(path))
     return ConfigLayer(
-        ruff_select=_text(data.get("ruff_select")),
+        ruff_select=_text(data, "ruff_select"),
         ast_grep_rules=_strings(data.get("ast_grep_rules")),
         exclude=_strings(data.get("exclude")),
         max_complexity=_ceiling(data, "max_complexity"),
         max_statements=_ceiling(data, "max_statements"),
         max_positional_args=_ceiling(data, "max_positional_args"),
-        rules_dir=_anchored(data.get("lint_rules_dir"), base),
-        baseline=_anchored(data.get("baseline"), base),
+        rules_dir=_anchored(data, "lint_rules_dir", base),
+        baseline=_anchored(data, "baseline", base),
     )
 
 
@@ -94,17 +94,28 @@ def _ceiling(data: Mapping, key: str) -> int | Unset:
     return _validate_ceiling(key, data[key]) if key in data else UNSET
 
 
-def _text(value) -> str | Unset:
-    return value if isinstance(value, str) and value else UNSET
+def _text(data: Mapping, key: str) -> str | Unset:
+    """A string setting. An empty one is "not given"; any other type is a
+    mistake to report -- ignoring a baseline would silently leave ratchet mode."""
+    if key not in data:
+        return UNSET
+    if not isinstance(data[key], str):
+        raise ConfigError(f"{key} must be a string, got {data[key]!r}")
+    return data[key] or UNSET
 
 
 def _strings(value) -> tuple[str, ...]:
     return tuple(value) if isinstance(value, list) else ()
 
 
-def _anchored(value, base: str) -> str | Unset:
-    # os.path.join leaves an absolute value as it is.
-    return os.path.join(base, value) if isinstance(value, str) and value else UNSET
+def _anchored(data: Mapping, key: str, base: str) -> str | Unset:
+    """A path setting, relative to the config file's directory. os.path.join
+    leaves an absolute path as it is."""
+    match _text(data, key):
+        case str(path):
+            return os.path.join(base, path)
+        case Unset.UNSET:
+            return UNSET
 
 
 def resolve_settings(

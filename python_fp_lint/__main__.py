@@ -60,7 +60,7 @@ def _cli_layer(args) -> ConfigLayer:
         max_complexity=_cli_ceiling(args, "max_complexity"),
         max_statements=_cli_ceiling(args, "max_statements"),
         max_positional_args=_cli_ceiling(args, "max_positional_args"),
-        baseline=getattr(args, "baseline", UNSET),
+        baseline=getattr(args, "baseline", "") or UNSET,
     )
 
 
@@ -472,7 +472,7 @@ _COMMANDS = {
     "rules": _run_rules,
     "baseline": _run_baseline,
     "schema": _run_schema,
-    "hook-check": lambda args: _hook_check_main(_hook_settings(args)),
+    "hook-check": lambda args: _hook_check_main(lambda: _hook_settings(args)),
 }
 
 

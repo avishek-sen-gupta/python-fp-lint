@@ -10,7 +10,7 @@ import json
 import os
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import NoReturn
 
 from python_fp_lint.lint_gate import _DEFAULT_SETTINGS, LintGate, LintSettings
@@ -107,17 +107,22 @@ def check_tool_event(
 
     Prints a diagnostic to stderr when blocking.
     """
-    outcome_of = _OUTCOME_BY_TOOL.get(tool_name)
-    file_path = tool_input.get("file_path", "")
-    if outcome_of is None or not file_path.endswith(".py"):
+    if not is_python_edit(tool_name, tool_input):
         return 0
-
+    file_path = tool_input["file_path"]
     gate = LintGate(settings=settings)
     # The edit is judged by where the real file lives, not by the temp copy
     # that gets linted.
     if gate.is_excluded(file_path, os.getcwd()):
         return 0
-    return _block_if_violating(gate, file_path, outcome_of(tool_input))
+    return _block_if_violating(gate, file_path, _OUTCOME_BY_TOOL[tool_name](tool_input))
+
+
+def is_python_edit(tool_name: str, tool_input: Mapping) -> bool:
+    """An Edit or Write to a .py file -- the only events the hook judges."""
+    return tool_name in _OUTCOME_BY_TOOL and tool_input.get("file_path", "").endswith(
+        ".py"
+    )
 
 
 def _block_if_violating(
@@ -134,13 +139,13 @@ def _block_if_violating(
     return 2
 
 
-def main(settings: LintSettings) -> NoReturn:
+def main(settings_for: Callable[[], LintSettings]) -> NoReturn:
     """Entry point: python -m python_fp_lint hook-check < event.json
 
-    The CLI resolves `settings`; with no --config they are the defaults."""
+    Settings are resolved only for an event the hook will judge, so a broken
+    --config never affects edits to other files."""
     data = json.load(sys.stdin)
-    sys.exit(
-        check_tool_event(
-            data.get("tool_name", ""), data.get("tool_input", {}), settings
-        )
-    )
+    tool_name, tool_input = data.get("tool_name", ""), data.get("tool_input", {})
+    if not is_python_edit(tool_name, tool_input):
+        sys.exit(0)
+    sys.exit(check_tool_event(tool_name, tool_input, settings_for()))

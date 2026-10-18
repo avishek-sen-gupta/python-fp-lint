@@ -206,3 +206,28 @@ def test_hook_check_without_config_uses_defaults(tmp_path):
         2,
         "[lint-gate] Blocked: 1 FP violation(",
     )
+
+
+def test_bad_config_does_not_touch_non_python_edits(tmp_path):
+    """The hook ignores non-Python files before it reads any config, so a
+    broken --config never turns a Markdown write into a crash."""
+    event = {
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "a.md"), "content": "# hi\n"},
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "python_fp_lint",
+            "hook-check",
+            "--config",
+            str(tmp_path / "missing.json"),
+        ],
+        input=json.dumps(event),
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=clean_env(PYTHONPATH=REPO_ROOT),
+    )
+    assert (result.returncode, result.stderr) == (0, "")

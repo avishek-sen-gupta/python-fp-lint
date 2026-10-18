@@ -777,3 +777,15 @@ class TestSplitList:
         from python_fp_lint.__main__ import _split_list
 
         assert _split_list(value) == expected
+
+
+@pytest.mark.parametrize("flag", ["--baseline", "--ruff-select"])
+def test_empty_flag_value_means_not_given(flag):
+    """`--baseline "$UNSET_VAR"` must fall through to the config file, as an
+    absent flag does -- not name a file called ""."""
+    from python_fp_lint.__main__ import _cli_layer
+    from python_fp_lint.settings import UNSET
+
+    args = _build_parser().parse_args(["precommit", "--config", CONFIG, flag, ""])
+    layer = _cli_layer(args)
+    assert getattr(layer, flag.lstrip("-").replace("-", "_")) is UNSET

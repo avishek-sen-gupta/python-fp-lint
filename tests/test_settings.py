@@ -180,3 +180,13 @@ class TestResolveSettings:
             ConfigLayer(), ConfigLayer(rules_dir=str(tmp_path / "typo")), str(tmp_path)
         )
         assert settings.rules_dir == lint_gate._package_rules_dir()
+
+
+@pytest.mark.parametrize("key", ["ruff_select", "lint_rules_dir", "baseline"])
+@pytest.mark.parametrize("value", [["E", "F"], 5, True])
+def test_wrong_typed_text_setting_is_a_config_error(tmp_path, key, value):
+    """A present value of the wrong type is a mistake to report, not a
+    setting to ignore: an ignored baseline would silently leave ratchet mode."""
+    path = _config(tmp_path, {key: value})
+    with pytest.raises(ConfigError, match=f"{key} must be a string"):
+        layer_from_config_file(path)
