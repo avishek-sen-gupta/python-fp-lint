@@ -2,10 +2,13 @@
 """Tests for the ReassignmentGate — beniget-based reassignment detection."""
 
 import os
+
+import beniget
 import pytest
 
+from python_fp_lint import lint_gate
 from python_fp_lint.reassignment_gate import ReassignmentGate
-from python_fp_lint.result import LintResult
+from python_fp_lint.result import BackendError, LintResult
 
 
 def _make_file(tmp_path, filename, content):
@@ -148,3 +151,29 @@ class TestReassignmentGateDetection:
         gate = ReassignmentGate()
         result = gate.evaluate(["/nonexistent/file.py"], str(tmp_path))
         assert result.passed is True
+
+
+class TestAnalysisFailure:
+    """A file beniget cannot analyse is an error, never a clean result: the
+    ratchet would bank the missing reassignments as a fall."""
+
+    @pytest.fixture
+    def broken_beniget(self, monkeypatch):
+        def explode(self, node):
+            raise RuntimeError("chain construction failed")
+
+        monkeypatch.setattr(beniget.DefUseChains, "visit", explode)
+
+    def test_raises_backend_error_naming_the_file(self, tmp_path, broken_beniget):
+        path = _make_file(str(tmp_path), "odd.py", "x = 1\nx = 2\n")
+        with pytest.raises(BackendError, match=r"odd\.py.*chain construction failed"):
+            ReassignmentGate().evaluate([path], str(tmp_path))
+
+    def test_unparseable_file_is_still_left_to_ruff(self, tmp_path, broken_beniget):
+        """A syntax error never reaches beniget; Ruff reports it instead."""
+        path = _make_file(str(tmp_path), "broken.py", "def (:\n")
+        result = ReassignmentGate().evaluate([path], str(tmp_path))
+        assert result.violations == []
+
+    def test_is_the_same_error_lint_gate_exports(self):
+        assert lint_gate.BackendError is BackendError

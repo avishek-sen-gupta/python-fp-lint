@@ -4,6 +4,7 @@
 import dataclasses
 import os
 import shutil
+from pathlib import Path
 
 import pytest
 from gitenv import clean_env
@@ -125,7 +126,7 @@ class TestMaterializeRulesDir:
         source = self._make_rules_source(tmp_path, rule_text="id: r1\n")
         cache_root = str(tmp_path / "cache")
         first = _materialize_rules_dir(source, cache_root)
-        assert open(os.path.join(first, "rules", "r1.yml")).read() == "id: r1\n"
+        assert Path(first, "rules", "r1.yml").read_text() == "id: r1\n"
 
         # Change the source rule content -- a different signature/cache entry
         (tmp_path / "rules_src" / "rules" / "r1.yml").write_text(
@@ -133,10 +134,7 @@ class TestMaterializeRulesDir:
         )
 
         second = _materialize_rules_dir(source, cache_root)
-        assert (
-            open(os.path.join(second, "rules", "r1.yml")).read()
-            == "id: r1\nchanged: true\n"
-        )
+        assert Path(second, "rules", "r1.yml").read_text() == "id: r1\nchanged: true\n"
 
 
 @needs_sg

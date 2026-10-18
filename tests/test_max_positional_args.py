@@ -16,11 +16,11 @@ import pytest
 from gitenv import clean_env
 
 from python_fp_lint.lint_gate import (
+    _DEFAULT_MAX_POSITIONAL_ARGS,
     ConfigError,
     LintGate,
     LintSettings,
     Locations,
-    _DEFAULT_MAX_POSITIONAL_ARGS,
 )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))

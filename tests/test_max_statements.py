@@ -16,11 +16,11 @@ import pytest
 from gitenv import clean_env
 
 from python_fp_lint.lint_gate import (
+    _DEFAULT_MAX_STATEMENTS,
     ConfigError,
     LintGate,
     LintSettings,
     Locations,
-    _DEFAULT_MAX_STATEMENTS,
 )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -41,7 +41,7 @@ _ELEVEN = _function("eleven", 11)
 _ELEVEN_ON_FEW_LINES = (
     "def dense(x):\n"
     + "".join(f"    a{i} = x + {i};" for i in range(1, 12))
-    + f"\n    return a11\n"
+    + "\n    return a11\n"
 )
 
 

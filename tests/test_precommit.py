@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from gitenv import clean_env
@@ -82,7 +83,7 @@ class TestStagedDiscovery:
         mapping = materialize_staged(str(repo), ["mod.py"], str(dest))
         [(materialized, rel)] = mapping.items()
         assert rel == "mod.py"
-        content = open(materialized).read()
+        content = Path(materialized).read_text()
         assert "staged = 2" in content
         assert "worktree_only" not in content
 
@@ -95,7 +96,7 @@ class TestStagedDiscovery:
         dest.mkdir()
         mapping = materialize_staged(str(repo), ["legacy.py"], str(dest))
         [(materialized, _)] = mapping.items()
-        assert open(materialized, "rb").read() == latin1
+        assert Path(materialized).read_bytes() == latin1
 
     def test_non_utf8_staged_file_is_linted_not_crashed(self, repo):
         """It reports Ruff's E902, rather than dying in the materializer."""

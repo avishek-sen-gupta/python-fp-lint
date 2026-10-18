@@ -229,7 +229,7 @@ class TestIncompleteMaterialization:
             return real(repo_root, *args)
 
         monkeypatch.setattr(ratchet, "_git", write_only_mod)
-        with pytest.raises(ratchet.RatchetError, match="other.py"):
+        with pytest.raises(ratchet.RatchetError, match=r"other\.py"):
             _total(repo)
 
     def test_a_failing_checkout_index_is_a_ratchet_error(self, repo, tmp_path):

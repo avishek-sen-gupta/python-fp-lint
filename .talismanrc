@@ -48,4 +48,6 @@ fileignoreconfig:
   checksum: 57228e56ebd1cb5dbe9cbb1ab55c67fdd403c8124a8659940f8000ee9ac986b0
 - filename: tests/test_max_positional_args.py
   checksum: 648107dcc051e09b4aea7b922c94ec9dffda6bf9bdfba0de39264d316c5203f7
+- filename: tests/test_reassignment_gate.py
+  checksum: f0746c9252a25fd724aa8b21e1ad0ddc2c29b9efbaf5d0b5caec34edb7318dd3
 version: "1.0"

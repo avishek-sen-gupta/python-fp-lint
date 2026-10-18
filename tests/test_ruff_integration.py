@@ -1,6 +1,7 @@
 """Tests for Ruff backend integration in LintGate."""
 
 import shutil
+
 import pytest
 
 from python_fp_lint import lint_gate
@@ -85,7 +86,7 @@ class TestRunRuff:
             _DEFAULT_RUFF_SELECT,
             _DEFAULT_MAX_COMPLEXITY,
         )
-        v = [v for v in violations if v.rule == "E722"][0]
+        v = next(v for v in violations if v.rule == "E722")
         assert "bare.py" in v.file
         assert v.line > 0
         assert v.message != ""

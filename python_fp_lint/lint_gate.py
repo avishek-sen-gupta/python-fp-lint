@@ -15,7 +15,10 @@ from functools import cache
 
 from python_fp_lint import baseline as baseline_file
 from python_fp_lint.reassignment_gate import ReassignmentGate
-from python_fp_lint.result import LintResult, LintViolation
+
+# BackendError lives in result.py so reassignment_gate can raise it without
+# importing this module; it stays importable from here.
+from python_fp_lint.result import BackendError, LintResult, LintViolation
 
 # Ruff rule selection — batteries-included + FP-specific
 _DEFAULT_RUFF_SELECT = "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,PLR0915,PLR0917,ANN401"
@@ -453,16 +456,6 @@ class ConfigError(Exception):
     """An explicitly-specified config file is missing or unreadable."""
 
 
-class BackendError(Exception):
-    """A lint backend could not be run, so its findings are unknown.
-
-    Deliberately not an empty result: "the linter did not run" and "the code
-    is clean" must stay distinguishable. The ratchet treats zero violations
-    as an improvement and tightens the baseline, so a silent failure would
-    write a baseline of zero and destroy the recorded debt.
-    """
-
-
 def _read_config(key: str, config_path: str | None = None):
     """Read one key from an explicitly named config file.
 
@@ -491,8 +484,8 @@ def _run_sg_once(sg_path: str, rules_dir: str, files: list[str]) -> list[LintVio
                 "--json",
                 "--config",
                 os.path.join(rules_dir, "sgconfig.yml"),
-            ]
-            + files,
+                *files,
+            ],
             capture_output=True,
             text=True,
             timeout=30,
@@ -580,8 +573,8 @@ def _run_ruff_once(
                 f"lint.pylint.max-statements={max_statements}",
                 "--config",
                 f"lint.pylint.max-positional-args={max_positional_args}",
-            ]
-            + files,
+                *files,
+            ],
             capture_output=True,
             text=True,
             timeout=30,

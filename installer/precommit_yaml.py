@@ -24,6 +24,13 @@ import os
 import re
 import sys
 
+
+def _emit(text: str) -> None:
+    """One line of installer progress. Run by the system python3 from the shell
+    installers, outside the package, so it cannot use python_fp_lint.output."""
+    sys.stdout.write(text + "\n")
+
+
 _ID = re.compile(r"^(\s*)-\s+id:\s*([\w.-]+)")
 
 
@@ -201,9 +208,9 @@ def insert(path: str, url: str, rev: str, hooks: list[dict]) -> None:
         if at is not None:
             out, added = add_missing_hooks(lines, at[0], at[1], hooks)
             if not added:
-                print("  already wired, skipping.")
+                _emit("  already wired, skipping.")
                 return
-            print(f"  already wired, adding: {', '.join(added)}.")
+            _emit(f"  already wired, adding: {', '.join(added)}.")
         else:
             repos_at = next(
                 (i for i, x in enumerate(lines) if re.match(r"^repos:\s*$", x)), None
@@ -224,7 +231,7 @@ def insert(path: str, url: str, rev: str, hooks: list[dict]) -> None:
 
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(out)
-    print(f"  wrote {path}")
+    _emit(f"  wrote {path}")
 
 
 def remove(path: str, url: str) -> None:
@@ -232,12 +239,12 @@ def remove(path: str, url: str) -> None:
         with open(path, encoding="utf-8") as f:
             lines = f.readlines()
     except FileNotFoundError:
-        print("  no .pre-commit-config.yaml, skipping.")
+        _emit("  no .pre-commit-config.yaml, skipping.")
         return
 
     at = find_block(lines, url)
     if at is None:
-        print("  not wired, skipping.")
+        _emit("  not wired, skipping.")
         return
 
     start, indent = at
@@ -251,7 +258,7 @@ def remove(path: str, url: str) -> None:
     ):
         # Nothing left but an empty `repos:` -- the installer created this file.
         os.remove(path)
-        print(f"  removed {path}")
+        _emit(f"  removed {path}")
         return
     else:
         # A bare `repos:` is null, which pre-commit rejects; keep it a list.
@@ -259,7 +266,7 @@ def remove(path: str, url: str) -> None:
 
     with open(path, "w", encoding="utf-8") as f:
         f.writelines(out)
-    print(f"  wrote {path}")
+    _emit(f"  wrote {path}")
 
 
 def main() -> None:

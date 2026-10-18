@@ -11,7 +11,7 @@ from collections import defaultdict
 
 import beniget
 
-from python_fp_lint.result import LintResult, LintViolation
+from python_fp_lint.result import BackendError, LintResult, LintViolation
 
 
 class ReassignmentGate:
@@ -42,10 +42,13 @@ class ReassignmentGate:
             return []
 
         duc = beniget.DefUseChains()
+        # A syntax error above is left to Ruff, which reports it. Past that
+        # point the file is valid Python, so a failure here would otherwise be
+        # invisible: zero reassignments, banked by the ratchet as a fall.
         try:
             duc.visit(tree)
-        except Exception:
-            return []
+        except Exception as exc:
+            raise BackendError(f"beniget could not analyse {filepath}: {exc}") from exc
 
         violations = []
         for scope_node, local_defs in duc.locals.items():

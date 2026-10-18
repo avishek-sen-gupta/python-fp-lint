@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from gitenv import clean_env
@@ -368,7 +369,9 @@ class TestPrecommitRatchet:
         # `baseline` comes last: config.example.json carries "baseline": null,
         # and spreading it after would put the key back to null.
         (tmp_path / "fp.json").write_text(
-            json.dumps({**json.load(open(CONFIG)), "baseline": "fp-baseline.json"})
+            json.dumps(
+                {**json.loads(Path(CONFIG).read_text()), "baseline": "fp-baseline.json"}
+            )
         )
         (tmp_path / "fp-baseline.json").write_text(
             json.dumps({"total": baseline_total}) + "\n"
@@ -767,7 +770,7 @@ class TestPrecommitWithoutBaselineIsUnchanged:
             max_statements = None
             max_positional_args = None
             strict = True
-            files = []
+            files = ()
             no_tighten = False
 
         with pytest.raises(SystemExit) as exc:

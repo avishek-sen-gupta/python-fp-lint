@@ -926,7 +926,6 @@ python_fp_lint/
 ├── precommit.py           # Staged-blob linting for the git commit gate
 ├── hook_check.py          # PreToolUse event handling behind `hook-check`
 ├── output.py              # emit() for command output; CLI logging for diagnostics
-├── patterns_report.py     # Standalone formatter for raw `sg scan --json` output (unused by the CLI)
 ├── ratchet.py             # Whole-index total, verdict and auto-tighten
 ├── baseline.py            # The ratchet's baseline file and path resolution
 ├── __init__.py            # Public API: LintGate, Locations, LintSettings, LintResult, LintViolation
