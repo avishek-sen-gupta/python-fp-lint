@@ -15,29 +15,6 @@ class BaselineError(Exception):
     """The baseline file is missing, unreadable, or holds no valid total."""
 
 
-def resolve_path(
-    cli_value: str | None, config_value: str | None, config_path: str | None
-) -> str | None:
-    """Baseline file in force: CLI > config file > none (the ratchet is off).
-
-    A relative path in the config file is relative to the config file itself,
-    so a config can be checked in beside the baseline it names -- the rule
-    lint_rules_dir already follows.
-    """
-    if cli_value:
-        return cli_value
-    return _from_config(config_value, config_path)
-
-
-def _from_config(config_value: str | None, config_path: str | None) -> str | None:
-    """The config file's baseline, anchored to the config file's directory."""
-    if not config_value:
-        return None
-    if config_path:
-        return os.path.join(os.path.dirname(os.path.abspath(config_path)), config_value)
-    return config_value
-
-
 def read(path: str) -> int:
     """The recorded total, or BaselineError.
 

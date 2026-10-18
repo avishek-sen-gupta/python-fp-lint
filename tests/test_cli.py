@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from gitenv import clean_env
 
-from python_fp_lint.__main__ import _build_parser, _run_precommit
+from python_fp_lint.__main__ import _COMMANDS, _build_parser
 from python_fp_lint.rules_meta import list_rules
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -329,17 +329,15 @@ class TestBaselineRefusesToGuess:
     """
 
     def test_update_exits_two_without_writing(self, tmp_path, monkeypatch):
-        from python_fp_lint.__main__ import _run_baseline_update
-
         path = tmp_path / "b.json"
         monkeypatch.setattr(
-            "python_fp_lint.__main__.missing_backends", lambda: ["ruff"]
+            "python_fp_lint.lint_gate.missing_backends", lambda: ["ruff"]
         )
         args = _build_parser().parse_args(
             ["baseline", "update", "--config", CONFIG, "--baseline", str(path)]
         )
         with pytest.raises(SystemExit) as exc:
-            _run_baseline_update(args)
+            _COMMANDS[args.command](args)
         assert exc.value.code == 2
         assert path.exists() is False
 
@@ -754,14 +752,14 @@ class TestPrecommitWithoutBaselineIsUnchanged:
         _git_in(tmp_path, "init", "-q", "--template=")
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(
-            "python_fp_lint.__main__.missing_backends", lambda: ["ruff"]
+            "python_fp_lint.lint_gate.missing_backends", lambda: ["ruff"]
         )
         # The real parser, so the arguments are exactly what the CLI builds.
         args = _build_parser().parse_args(
             ["precommit", "--config", str(tmp_path / "does-not-exist.json"), "--strict"]
         )
         with pytest.raises(SystemExit) as exc:
-            _run_precommit(args)
+            _COMMANDS[args.command](args)
         assert exc.value.code == 2
         err = capsys.readouterr().err
         assert err == "error: required lint backend(s) not found: ruff\n"

@@ -83,28 +83,3 @@ class TestReadRejectsBadFiles:
         path.write_text(json.dumps({"total": True}))
         with pytest.raises(baseline.BaselineError, match="no valid 'total'"):
             baseline.read(str(path))
-
-
-class TestResolvePath:
-    def test_no_config_value_means_no_ratchet(self):
-        assert baseline.resolve_path(None, None, "/proj/fp.json") is None
-
-    def test_cli_value_wins(self):
-        assert (
-            baseline.resolve_path("/tmp/cli.json", "cfg.json", "/proj/fp.json")
-            == "/tmp/cli.json"
-        )
-
-    def test_cli_value_wins_even_with_no_config_key(self):
-        assert baseline.resolve_path("/tmp/cli.json", None, None) == "/tmp/cli.json"
-
-    def test_relative_config_value_resolves_against_the_config_file(self):
-        assert (
-            baseline.resolve_path(None, "fp-baseline.json", "/proj/cfg/fp.json")
-            == "/proj/cfg/fp-baseline.json"
-        )
-
-    def test_absolute_config_value_is_left_alone(self):
-        assert (
-            baseline.resolve_path(None, "/var/b.json", "/proj/fp.json") == "/var/b.json"
-        )

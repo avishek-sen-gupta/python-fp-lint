@@ -239,7 +239,7 @@ class TestEntryPoints:
         event = {"file_path": target, "content": _ELEVEN}
 
         relaxed = _write_config(tmp_path, max_statements=50)
-        assert check_tool_event("Write", event, relaxed) == 0
+        assert check_tool_event("Write", event, load_settings(relaxed)) == 0
 
         strict = _write_config(tmp_path, max_statements=10)
-        assert check_tool_event("Write", event, strict) == 2
+        assert check_tool_event("Write", event, load_settings(strict)) == 2

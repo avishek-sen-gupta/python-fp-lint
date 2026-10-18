@@ -242,7 +242,7 @@ class TestExcludeInHookCheck:
             "file_path": str(tmp_path / "generated" / "api.py"),
             "content": "xs = []\nxs.append(1)\n",
         }
-        assert check_tool_event("Write", event, config) == 0
+        assert check_tool_event("Write", event, load_settings(config)) == 0
 
     def test_write_elsewhere_is_still_blocked(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -251,4 +251,4 @@ class TestExcludeInHookCheck:
             "file_path": str(tmp_path / "src" / "app.py"),
             "content": "xs = []\nxs.append(1)\n",
         }
-        assert check_tool_event("Write", event, config) == 2
+        assert check_tool_event("Write", event, load_settings(config)) == 2

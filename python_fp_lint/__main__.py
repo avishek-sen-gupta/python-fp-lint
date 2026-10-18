@@ -7,9 +7,11 @@ Designed for both human use (text output) and LLM agent use (--format json).
 import argparse
 import json
 import logging
+import os
 import subprocess
 import sys
-import tempfile
+from collections.abc import Callable
+from typing import NoReturn
 
 from python_fp_lint import baseline as baseline_file
 from python_fp_lint import ratchet
@@ -18,18 +20,20 @@ from python_fp_lint.lint_gate import (
     BackendError,
     ConfigError,
     LintGate,
+    LintSettings,
     _validate_ceiling,
-    missing_backends,
+    require_backends,
 )
 from python_fp_lint.output import OutputFormat, configure_cli_logging, emit
-from python_fp_lint.precommit import evaluate_staged, staged_python_files
-from python_fp_lint.reports import CheckReport, RatchetReport
+from python_fp_lint.ratchets import CommitRequest, Ratchet
+from python_fp_lint.reports import CheckReport, Report
 from python_fp_lint.rules_meta import list_rules
 from python_fp_lint.settings import (
     UNSET,
     ConfigLayer,
     Unset,
     layer_from_config_file,
+    resolve_ratchet,
     resolve_settings,
 )
 
@@ -65,71 +69,6 @@ def _cli_ceiling(args, name: str) -> int | Unset:
     return UNSET if value is UNSET else _validate_ceiling(name, value)
 
 
-def _build_gate(args) -> LintGate:
-    return LintGate(
-        settings=resolve_settings(
-            _cli_layer(args), layer_from_config_file(args.config), "."
-        )
-    )
-
-
-def _baseline_path(args) -> str | Unset:
-    """The baseline in force: the command line's, else the config file's."""
-    cli = _cli_layer(args).baseline
-    return cli if cli is not UNSET else layer_from_config_file(args.config).baseline
-
-
-def _resolve_baseline_or_exit(args) -> str:
-    """The baseline path in force, or exit 2 -- these commands require one."""
-    path = _baseline_path(args)
-    if path is UNSET:
-        log.error(
-            "error: no baseline configured; pass --baseline PATH or set "
-            '"baseline" in the config file'
-        )
-        sys.exit(2)
-    return path
-
-
-def _require_backends() -> None:
-    """Exit 2 when a backend is unreachable.
-
-    The ratchet enforces this unconditionally: a missing backend contributes
-    zero violations, which reads as an improvement and would tighten the
-    baseline toward zero.
-    """
-    missing = missing_backends()
-    if missing:
-        log.error(f"error: required lint backend(s) not found: {', '.join(missing)}")
-        sys.exit(2)
-
-
-def _current_total(args) -> int:
-    _require_backends()
-    result = ratchet.total_violations(_git_repo_root(), _build_gate(args))
-    return len(result.violations)
-
-
-def _run_baseline_update(args):
-    path = _resolve_baseline_or_exit(args)
-    total = _current_total(args)
-    baseline_file.write(path, total)
-    if args.format == "json":
-        emit(json.dumps({"baseline": total, "total": total, "path": path}, indent=2))
-    else:
-        emit(f"baseline recorded: {total} violation(s) -> {path}")
-
-
-def _run_baseline_show(args):
-    path = _resolve_baseline_or_exit(args)
-    recorded = baseline_file.read(path)
-    total = _current_total(args)
-    if args.format == "json":
-        emit(json.dumps({"baseline": recorded, "total": total, "path": path}, indent=2))
-    else:
-        emit(f"baseline: {recorded}\ncurrent:  {total}\npath:     {path}")
-
-
 def _enforce_strict(args) -> None:
     """Exit 2 when --strict is set and a backend is unreachable.
 
@@ -137,20 +76,16 @@ def _enforce_strict(args) -> None:
     families -- an invisible pass, which is the wrong default for a gate.
     """
     if getattr(args, "strict", False):
-        _require_backends()
+        require_backends()
 
 
-def _report(result, fmt: str) -> None:
-    """Print a LintResult in the requested format and exit 0/1."""
-    _emit_report(CheckReport(result), fmt)
+def _layers(args) -> tuple[ConfigLayer, ConfigLayer]:
+    """What the command line and the config file each said."""
+    return _cli_layer(args), layer_from_config_file(args.config)
 
 
-def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
-    """Print a ratchet verdict and exit 0 (clean or tightened) or 1 (regression)."""
-    _emit_report(RatchetReport(verdict, violations, frozenset(staged)), fmt)
-
-
-def _emit_report(report, fmt: str) -> None:
+def _finish(report: Report, fmt: str) -> NoReturn:
+    """Emit what the report renders, if anything, and exit with its code."""
     text = report.render(OutputFormat[fmt.upper()])
     if text:
         emit(text, report.stream)
@@ -173,7 +108,44 @@ def _with_config_errors(run, args):
 
 def _run_check(args):
     _enforce_strict(args)
-    _report(_build_gate(args).evaluate(args.files, "."), args.format)
+    cli, file = _layers(args)
+    gate = LintGate(settings=resolve_settings(cli, file, "."))
+    _finish(CheckReport(gate.evaluate(args.files, ".")), args.format)
+
+
+def _run_with_ratchet(args, act: Callable[[Ratchet, str, LintGate], Report]) -> None:
+    """Resolve settings and the ratchet for the repo, then let `act` answer."""
+    repo_root = _git_repo_root()
+    cli, file = _layers(args)
+    gate = LintGate(settings=resolve_settings(cli, file, repo_root))
+    _finish(act(resolve_ratchet(cli, file), repo_root, gate), args.format)
+
+
+def _run_precommit(args):
+    # Must run before anything reads --config: reading it first would reorder
+    # the two failure modes for `--strict` with both a missing backend and a
+    # bad --config.
+    _enforce_strict(args)
+    request = CommitRequest(paths=args.files, tighten=not args.no_tighten)
+    _run_with_ratchet(
+        args, lambda ratchet, root, gate: ratchet.check_commit(root, gate, request)
+    )
+
+
+def _run_baseline_update(args):
+    _run_with_ratchet(args, lambda ratchet, root, gate: ratchet.record(root, gate))
+
+
+def _run_baseline_show(args):
+    _run_with_ratchet(args, lambda ratchet, root, gate: ratchet.show(root, gate))
+
+
+def _hook_settings(args) -> LintSettings:
+    """The hook's settings: config is optional here, because the Claude Code
+    gate has to work the moment it is installed -- no config means defaults."""
+    config = getattr(args, "config", UNSET)
+    file = ConfigLayer() if config is UNSET else layer_from_config_file(config)
+    return resolve_settings(ConfigLayer(), file, os.getcwd())
 
 
 def _git_repo_root() -> str:
@@ -187,57 +159,6 @@ def _git_repo_root() -> str:
         log.error("error: not inside a git repository")
         sys.exit(2)
     return result.stdout.strip()
-
-
-def _run_precommit(args):
-    # Must run before anything reads --config: building the gate opens and
-    # parses the config file, which would reorder the two failure modes
-    # for `--strict` with both a missing backend and a bad --config, breaking
-    # the no-baseline path's "byte-for-byte unchanged" guarantee.
-    _enforce_strict(args)
-    repo_root = _git_repo_root()
-    gate = _build_gate(args)
-    baseline_path = _baseline_path(args)
-    if baseline_path is UNSET:
-        _run_precommit_staged(args, gate, repo_root)
-    else:
-        _run_precommit_ratchet(args, gate, repo_root, baseline_path)
-
-
-def _run_precommit_staged(args, gate: LintGate, repo_root: str) -> None:
-    """The original gate: every violation in a staged file blocks the commit."""
-    # Materialize staged blobs outside the repo: ast-grep and Ruff both honour
-    # the enclosing tree's ignore rules, and a temp dir inside it may be skipped.
-    with tempfile.TemporaryDirectory(prefix="python-fp-lint-staged-") as workdir:
-        result = evaluate_staged(
-            repo_root=repo_root,
-            workdir=workdir,
-            gate=gate,
-            paths=args.files,
-        )
-    _report(result, args.format)
-
-
-def _run_precommit_ratchet(
-    args, gate: LintGate, repo_root: str, baseline_path: str
-) -> None:
-    """The ratchet: the whole-repo total may fall and may not rise.
-
-    This replaces the staged check rather than adding to it. Leaving the
-    staged check on would make a dirty legacy repo uncommittable, which is
-    the situation the ratchet exists to escape.
-    """
-    _require_backends()
-    result = ratchet.total_violations(repo_root, gate)
-    verdict = ratchet.apply(
-        repo_root,
-        baseline_path,
-        total=len(result.violations),
-        tighten=not args.no_tighten,
-    )
-    _report_ratchet(
-        verdict, result.violations, set(staged_python_files(repo_root)), args.format
-    )
 
 
 def _run_rules(args):
@@ -507,7 +428,7 @@ def _add_hook_check(sub) -> None:
     )
     hook.add_argument(
         "--config",
-        default=None,
+        default=argparse.SUPPRESS,
         metavar="PATH",
         help="Optional config JSON file; omitted means built-in defaults",
     )
@@ -551,7 +472,7 @@ _COMMANDS = {
     "rules": _run_rules,
     "baseline": _run_baseline,
     "schema": _run_schema,
-    "hook-check": lambda args: _hook_check_main(args.config),
+    "hook-check": lambda args: _hook_check_main(_hook_settings(args)),
 }
 
 

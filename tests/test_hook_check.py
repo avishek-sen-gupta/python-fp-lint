@@ -4,9 +4,14 @@ Tests for hook_check.py — the PreToolUse lint gate logic.
 All tests are pure Python: no subprocess, no shell, no environment setup.
 """
 
+import json
+import os
 import shutil
+import subprocess
+import sys
 
 import pytest
+from gitenv import clean_env
 
 from python_fp_lint.hook_check import (
     check_tool_event,
@@ -173,3 +178,31 @@ class TestCheckToolEvent:
     def test_unknown_tool_is_allowed(self):
         rc = check_tool_event("Bash", {"command": "rm -rf /"})
         assert rc == 0
+
+
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+
+
+@needs_ruff
+def test_hook_check_without_config_uses_defaults(tmp_path):
+    """The hook must work the moment it is installed: no --config means the
+    built-in defaults, not an error."""
+    event = {
+        "tool_name": "Write",
+        "tool_input": {
+            "file_path": str(tmp_path / "new.py"),
+            "content": "xs = []\nxs.append(1)\n",
+        },
+    }
+    result = subprocess.run(
+        [sys.executable, "-m", "python_fp_lint", "hook-check"],
+        input=json.dumps(event),
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=clean_env(PYTHONPATH=REPO_ROOT),
+    )
+    assert (result.returncode, result.stderr.splitlines()[0][:36]) == (
+        2,
+        "[lint-gate] Blocked: 1 FP violation(",
+    )

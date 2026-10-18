@@ -78,24 +78,23 @@ class TestMissingBackends:
 class TestEnforceStrict:
     def test_exits_two_when_backend_missing(self, monkeypatch, capsys):
         monkeypatch.setattr(
-            "python_fp_lint.__main__.missing_backends", lambda: ["ast-grep"]
+            "python_fp_lint.lint_gate.missing_backends", lambda: ["ast-grep"]
         )
-        with pytest.raises(SystemExit) as exc:
+        with pytest.raises(
+            lint_gate.BackendError,
+            match=r"required lint backend\(s\) not found: ast-grep",
+        ):
             _enforce_strict(_Args(strict=True))
-        assert exc.value.code == 2
-        assert capsys.readouterr().err == (
-            "error: required lint backend(s) not found: ast-grep\n"
-        )
 
     def test_silent_when_nothing_missing(self, monkeypatch, capsys):
-        monkeypatch.setattr("python_fp_lint.__main__.missing_backends", lambda: [])
+        monkeypatch.setattr("python_fp_lint.lint_gate.missing_backends", lambda: [])
         _enforce_strict(_Args(strict=True))
         assert capsys.readouterr() == ("", "")
 
     def test_no_check_without_strict_flag(self, monkeypatch, capsys):
         """A missing backend goes unreported unless --strict asks for it."""
         monkeypatch.setattr(
-            "python_fp_lint.__main__.missing_backends", lambda: ["ruff"]
+            "python_fp_lint.lint_gate.missing_backends", lambda: ["ruff"]
         )
         _enforce_strict(_Args(strict=False))
         assert capsys.readouterr() == ("", "")

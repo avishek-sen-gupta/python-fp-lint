@@ -11,11 +11,11 @@ import os
 import sys
 import tempfile
 from collections.abc import Mapping, Sequence
+from typing import NoReturn
 
-from python_fp_lint.lint_gate import LintGate, LintSettings
+from python_fp_lint.lint_gate import _DEFAULT_SETTINGS, LintGate, LintSettings
 from python_fp_lint.output import Stream, emit
 from python_fp_lint.result import LintViolation
-from python_fp_lint.settings import load_settings
 
 
 def simulate_edit(
@@ -101,7 +101,7 @@ def _report_block(
 
 
 def check_tool_event(
-    tool_name: str, tool_input: Mapping, config_path: str | None = None
+    tool_name: str, tool_input: Mapping, settings: LintSettings = _DEFAULT_SETTINGS
 ) -> int:
     """Evaluate a PreToolUse event. Returns 0 (allow) or 2 (block).
 
@@ -112,10 +112,6 @@ def check_tool_event(
     if outcome_of is None or not file_path.endswith(".py"):
         return 0
 
-    # Without a config file, the built-in defaults apply.
-    settings = (
-        load_settings(config_path, os.getcwd()) if config_path else LintSettings()
-    )
     gate = LintGate(settings=settings)
     # The edit is judged by where the real file lives, not by the temp copy
     # that gets linted.
@@ -138,16 +134,13 @@ def _block_if_violating(
     return 2
 
 
-def main(config_path: str | None = None):
+def main(settings: LintSettings) -> NoReturn:
     """Entry point: python -m python_fp_lint hook-check < event.json
 
-    Unlike `check` and `precommit`, config is optional here: the Claude Code
-    gate has to work the moment the hook is installed, so no config means
-    built-in defaults.
-    """
+    The CLI resolves `settings`; with no --config they are the defaults."""
     data = json.load(sys.stdin)
     sys.exit(
         check_tool_event(
-            data.get("tool_name", ""), data.get("tool_input", {}), config_path
+            data.get("tool_name", ""), data.get("tool_input", {}), settings
         )
     )
