@@ -12,7 +12,7 @@ from python_fp_lint import lint_gate
 from python_fp_lint.__main__ import _enforce_strict
 
 
-@dataclass
+@dataclass(frozen=True)
 class _Completed:
     """Stand-in for subprocess.CompletedProcess."""
 

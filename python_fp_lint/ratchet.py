@@ -163,7 +163,7 @@ def total_violations(repo_root: str, gate: LintGate) -> LintResult:
         return evaluate_index(repo_root, workdir, gate)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Verdict:
     recorded: int
     total: int

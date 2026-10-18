@@ -197,26 +197,26 @@ def repo(tmp_path):
     return tmp_path
 
 
+def _stage(repo, relpath):
+    _dirty(repo, relpath)
+    subprocess.run(["git", "add", relpath], cwd=repo, check=True, env=clean_env())
+
+
 class TestExcludeInPrecommit:
     """Staged files are excluded by their repo-relative path, not the temp copy."""
-
-    @staticmethod
-    def _stage(repo, relpath):
-        _dirty(repo, relpath)
-        subprocess.run(["git", "add", relpath], cwd=repo, check=True, env=clean_env())
 
     def _run_precommit(self, repo, config):
         return _run("--format", "json", "precommit", "--config", config, cwd=str(repo))
 
     def test_excluded_staged_file_does_not_block_the_commit(self, repo):
-        self._stage(repo, "generated/api.py")
+        _stage(repo, "generated/api.py")
         config = _write_config(repo, exclude=["generated/"])
         result = self._run_precommit(repo, config)
         assert result.returncode == 0, result.stdout + result.stderr
         assert json.loads(result.stdout)["violation_count"] == 0
 
     def test_unexcluded_staged_file_still_blocks(self, repo):
-        self._stage(repo, "src/app.py")
+        _stage(repo, "src/app.py")
         config = _write_config(repo, exclude=["generated/"])
         result = self._run_precommit(repo, config)
         assert result.returncode == 1

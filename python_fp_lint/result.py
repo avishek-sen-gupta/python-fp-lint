@@ -14,7 +14,7 @@ class BackendError(Exception):
     """
 
 
-@dataclass
+@dataclass(frozen=True)
 class LintViolation:
     rule: str
     file: str
@@ -22,7 +22,7 @@ class LintViolation:
     message: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class LintResult:
     passed: bool
     violations: list[LintViolation]

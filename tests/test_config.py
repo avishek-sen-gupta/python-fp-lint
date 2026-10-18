@@ -158,22 +158,22 @@ class TestConfigRequiredOnCLI:
         assert result.returncode == 0, result.stderr
 
 
+def _captured_config_dir(monkeypatch, gate, project_root):
+    # The method returns whatever _resolve_rules_dir returns, so a fake
+    # that echoes config_dir hands it straight back.
+    monkeypatch.setattr(
+        "python_fp_lint.lint_gate._resolve_rules_dir",
+        lambda _explicit, _root, config_dir=None: config_dir,
+    )
+    return gate._resolve_rules_dir(project_root)
+
+
 class TestRelativeRulesDir:
     """A relative lint_rules_dir is relative to the config file, not to cwd.
 
     The packaged rules dir always wins as the first candidate, so these assert
     on the candidate the gate hands to the resolver.
     """
-
-    @staticmethod
-    def _captured_config_dir(monkeypatch, gate, project_root):
-        # The method returns whatever _resolve_rules_dir returns, so a fake
-        # that echoes config_dir hands it straight back.
-        monkeypatch.setattr(
-            "python_fp_lint.lint_gate._resolve_rules_dir",
-            lambda _explicit, _root, config_dir=None: config_dir,
-        )
-        return gate._resolve_rules_dir(project_root)
 
     def test_relative_path_is_joined_to_the_config_directory(
         self, tmp_path, monkeypatch
@@ -182,7 +182,7 @@ class TestRelativeRulesDir:
         cfg_dir.mkdir()
         path = cfg_dir / "fp.json"
         path.write_text(json.dumps({"lint_rules_dir": "myrules"}))
-        captured = self._captured_config_dir(
+        captured = _captured_config_dir(
             monkeypatch,
             LintGate(locations=Locations(config_path=str(path))),
             str(tmp_path),
@@ -192,7 +192,7 @@ class TestRelativeRulesDir:
     def test_absolute_path_is_left_alone(self, tmp_path, monkeypatch):
         path = tmp_path / "fp.json"
         path.write_text(json.dumps({"lint_rules_dir": "/opt/rules"}))
-        captured = self._captured_config_dir(
+        captured = _captured_config_dir(
             monkeypatch,
             LintGate(locations=Locations(config_path=str(path))),
             str(tmp_path),
@@ -200,28 +200,28 @@ class TestRelativeRulesDir:
         assert captured == "/opt/rules"
 
     def test_no_config_yields_no_candidate(self, tmp_path, monkeypatch):
-        captured = self._captured_config_dir(
+        captured = _captured_config_dir(
             monkeypatch, LintGate(locations=Locations(config_path=None)), str(tmp_path)
         )
         assert captured is None
 
 
+def _install_rules(dest):
+    os.makedirs(os.path.join(dest, "rules"), exist_ok=True)
+    with open(os.path.join(dest, "sgconfig.yml"), "w") as f:
+        f.write("ruleDirs:\n  - rules\n")
+    shutil.copy(
+        os.path.join(REPO_ROOT, "python_fp_lint", "rules", "no-list-append.yml"),
+        os.path.join(dest, "rules", "no-list-append.yml"),
+    )
+    return dest
+
+
 class TestConfiguredRulesDirWins:
     """A rules dir named in the config outranks the copy inside the package."""
 
-    @staticmethod
-    def _install_rules(dest):
-        os.makedirs(os.path.join(dest, "rules"), exist_ok=True)
-        with open(os.path.join(dest, "sgconfig.yml"), "w") as f:
-            f.write("ruleDirs:\n  - rules\n")
-        shutil.copy(
-            os.path.join(REPO_ROOT, "python_fp_lint", "rules", "no-list-append.yml"),
-            os.path.join(dest, "rules", "no-list-append.yml"),
-        )
-        return dest
-
     def test_config_rules_dir_beats_package_copy(self, tmp_path):
-        rules = self._install_rules(str(tmp_path / ".python-fp-lint"))
+        rules = _install_rules(str(tmp_path / ".python-fp-lint"))
         path = _write_config(tmp_path, lint_rules_dir=".python-fp-lint")
         assert (
             LintGate(locations=Locations(config_path=path))._resolve_rules_dir(
@@ -232,7 +232,7 @@ class TestConfiguredRulesDirWins:
 
     def test_configured_dir_is_scanned_in_place(self, tmp_path, monkeypatch):
         """No copy to a cache: the consumer put the rules where they want them."""
-        rules = self._install_rules(str(tmp_path / ".python-fp-lint"))
+        rules = _install_rules(str(tmp_path / ".python-fp-lint"))
         path = _write_config(tmp_path, lint_rules_dir=".python-fp-lint")
 
         def never_materialized(src, root):
@@ -251,7 +251,7 @@ class TestConfiguredRulesDirWins:
 
     def test_deleting_a_configured_rule_disables_it(self, tmp_path):
         """Proves the configured dir -- not the package copy -- is in play."""
-        rules = self._install_rules(str(tmp_path / ".python-fp-lint"))
+        rules = _install_rules(str(tmp_path / ".python-fp-lint"))
         path = _write_config(tmp_path, lint_rules_dir=".python-fp-lint")
         target = tmp_path / "m.py"
         target.write_text("xs = []\nxs.append(1)\n")

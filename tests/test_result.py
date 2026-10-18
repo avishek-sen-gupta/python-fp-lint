@@ -1,6 +1,11 @@
 # tests/test_result.py
 """Tests for LintResult and LintViolation types."""
 
+import dataclasses
+
+import pytest
+
+from python_fp_lint.ratchet import Verdict
 from python_fp_lint.result import LintResult, LintViolation
 
 
@@ -29,3 +34,19 @@ class TestLintResult:
         assert r.passed is False
         assert len(r.violations) == 1
         assert r.violations[0].rule == "no-print"
+
+
+class TestResultsAreImmutable:
+    """A result handed back by the gate cannot be changed by its receiver."""
+
+    @pytest.mark.parametrize(
+        ("value", "field"),
+        [
+            (LintViolation(rule="r", file="f.py", line=1, message="m"), "line"),
+            (LintResult(passed=True, violations=[]), "passed"),
+            (Verdict(recorded=2, total=1, tightened=True), "total"),
+        ],
+    )
+    def test_fields_cannot_be_reassigned(self, value, field):
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            setattr(value, field, 0)

@@ -25,7 +25,7 @@ fileignoreconfig:
 - filename: python_fp_lint/precommit.py
   checksum: f29eb1359e8861cc6a6b59b85532d3398aff6d83d4e3eb5ec27a953e8993fe12
 - filename: tests/test_config.py
-  checksum: 0aa8d68c054f966dbde006e7055c06f4dbdfa5e1e2b1a7dac5c06cf4a7607a67
+  checksum: 7fca75015b3f703dd92f6be3e141d440f2d5898fc68750c252306ede5035f4c4
 - filename: install-precommit.sh
   checksum: 52bab58cdcaa4d7701fc816ffad3655f298d6c38d52116150511072b0eb7aa72
 - filename: tests/test_exclude.py
@@ -54,4 +54,6 @@ fileignoreconfig:
   checksum: 4af6f18884311aa4fba23b30dba01aa1dc720e497c45062c8d661dde0e654b5c
 - filename: python_fp_lint/reassignment_gate.py
   checksum: ade29e91834317d4cf8b5d8744fecae8f09efe351d262cd2794b9f1f33e5c9e8
+- filename: tests/test_result.py
+  checksum: 61a987ddfdf83e574be50b02864e92d5ef98d1944f8c875995d35b59f898b2c5
 version: "1.0"
