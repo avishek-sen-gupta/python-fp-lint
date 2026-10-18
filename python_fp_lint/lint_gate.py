@@ -350,6 +350,18 @@ def missing_backends() -> list[str]:
     ]
 
 
+def require_backends() -> None:
+    """BackendError when ast-grep or Ruff is unreachable.
+
+    A missing backend contributes zero violations, which must never pass for
+    a clean repo -- under the ratchet it would read as an improvement and
+    tighten the baseline toward zero.
+    """
+    missing = missing_backends()
+    if missing:
+        raise BackendError(f"required lint backend(s) not found: {', '.join(missing)}")
+
+
 class ConfigError(Exception):
     """An explicitly-specified config file is missing or unreadable."""
 

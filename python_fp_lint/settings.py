@@ -23,6 +23,7 @@ from python_fp_lint.lint_gate import (
     _package_rules_dir,
     _validate_ceiling,
 )
+from python_fp_lint.ratchets import BaselineRatchet, NoRatchet, Ratchet
 
 T = TypeVar("T")
 
@@ -165,3 +166,13 @@ def _search_rules_dir(configured: str | Unset, project_root: str) -> str:
 
 def _is_rules_dir(path: str) -> bool:
     return os.path.isdir(path) and os.path.exists(os.path.join(path, "sgconfig.yml"))
+
+
+def resolve_ratchet(cli: ConfigLayer, file: ConfigLayer) -> Ratchet:
+    """The baseline behaviour in force: the command line's baseline, else the
+    config file's, else none at all."""
+    match _first(cli.baseline, file.baseline, UNSET):
+        case str(path):
+            return BaselineRatchet(path)
+        case Unset.UNSET:
+            return NoRatchet()
