@@ -34,10 +34,8 @@ log = logging.getLogger("python_fp_lint.cli")
 configure_cli_logging()
 
 
-def _split_list(value: str | None) -> list[str] | None:
-    """Comma-separated CLI value into a list; None when the flag is unused."""
-    if not value:
-        return None
+def _split_list(value: str) -> list[str]:
+    """Comma-separated CLI value into a list; empty when the flag is unused."""
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
@@ -49,7 +47,7 @@ def _build_gate(args) -> LintGate:
         settings=LintSettings(
             ruff_select=args.ruff_select or None,
             ast_grep_rules=_split_list(args.ast_grep_rules),
-            exclude=_split_list(getattr(args, "exclude", None)),
+            exclude=_split_list(getattr(args, "exclude", "")),
             max_complexity=getattr(args, "max_complexity", None),
             max_statements=getattr(args, "max_statements", None),
             max_positional_args=getattr(args, "max_positional_args", None),
@@ -283,7 +281,7 @@ def _run_precommit_staged(args, gate: LintGate, repo_root: str) -> None:
             repo_root=repo_root,
             workdir=workdir,
             gate=gate,
-            paths=args.files or None,
+            paths=args.files,
         )
     _report(result, args.format)
 
@@ -460,12 +458,12 @@ def main():
         )
         p.add_argument(
             "--ast-grep-rules",
-            default=None,
+            default="",
             help="Comma-separated ast-grep rule IDs to enable (overrides config.json)",
         )
         p.add_argument(
             "--exclude",
-            default=None,
+            default="",
             help=(
                 "Comma-separated file globs to skip "
                 "(overrides the config file's `exclude`)"

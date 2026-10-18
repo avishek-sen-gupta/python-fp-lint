@@ -11,6 +11,7 @@ the change being committed.
 
 import os
 import subprocess
+from collections.abc import Mapping, Sequence
 
 from python_fp_lint.lint_gate import LintGate
 from python_fp_lint.result import LintResult, LintViolation
@@ -53,7 +54,9 @@ def staged_python_files(repo_root: str) -> list[str]:
     return [p for p in out.split("\0") if p.endswith(".py")]
 
 
-def materialize_staged(repo_root: str, paths: list[str], dest: str) -> dict[str, str]:
+def materialize_staged(
+    repo_root: str, paths: Sequence[str], dest: str
+) -> dict[str, str]:
     """Write each staged blob under dest, mirroring its repo-relative path.
 
     Returns a map of materialized absolute path -> repo-relative path.
@@ -72,7 +75,9 @@ def materialize_staged(repo_root: str, paths: list[str], dest: str) -> dict[str,
     return {write_blob(path): path for path in paths}
 
 
-def remap_to_repo_relative(result: LintResult, mapping: dict[str, str]) -> LintResult:
+def remap_to_repo_relative(
+    result: LintResult, mapping: Mapping[str, str]
+) -> LintResult:
     """Re-label violations with repo-relative paths rather than scanned ones.
 
     `mapping` is materialized-absolute-path -> repo-relative path, as
@@ -92,11 +97,11 @@ def remap_to_repo_relative(result: LintResult, mapping: dict[str, str]) -> LintR
 
 
 def _narrow_to_requested(
-    staged: list[str], paths: list[str] | None, repo_root: str
+    staged: Sequence[str], paths: Sequence[str], repo_root: str
 ) -> list[str]:
-    """Intersect the staged set with caller-supplied paths, if any."""
-    if paths is None:
-        return staged
+    """Intersect the staged set with caller-supplied paths; none means all."""
+    if not paths:
+        return list(staged)
     wanted = {os.path.relpath(os.path.abspath(p), repo_root) for p in paths}
     return [p for p in staged if p in wanted]
 
@@ -105,12 +110,12 @@ def evaluate_staged(
     repo_root: str,
     workdir: str,
     gate: LintGate,
-    paths: list[str] | None = None,
+    paths: Sequence[str] = (),
 ) -> LintResult:
     """Lint staged .py content under repo_root, materializing blobs into workdir.
 
     `paths` (repo-relative) narrows the staged set — pre-commit passes the
-    filenames it selected. `workdir` must be an existing empty directory
+    filenames it selected. Empty, the default, lints every staged file. `workdir` must be an existing empty directory
     outside the repo; the caller owns its lifetime.
     """
     # Exclusions are applied to the repo-relative names, before blobs are

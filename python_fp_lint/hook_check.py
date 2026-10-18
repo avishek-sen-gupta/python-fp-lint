@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Mapping, Sequence
 
 from python_fp_lint.lint_gate import LintGate, Locations
 from python_fp_lint.output import Stream, emit
@@ -39,7 +40,7 @@ def simulate_edit(
 
 
 def violations_in_range(
-    violations: list[LintViolation], start: int, end: int
+    violations: Sequence[LintViolation], start: int, end: int
 ) -> list[LintViolation]:
     """Return only violations whose line falls within [start, end]."""
     return [v for v in violations if start <= v.line <= end]
@@ -59,7 +60,7 @@ def _lint_content(
     return violations_in_range(result.violations, start_line, end_line)
 
 
-def _edit_outcome(tool_input: dict) -> tuple[str, int, int] | None:
+def _edit_outcome(tool_input: Mapping) -> tuple[str, int, int] | None:
     """Post-edit content and touched line range for an Edit event."""
     file_path = tool_input.get("file_path", "")
     if not os.path.isfile(file_path):
@@ -77,7 +78,7 @@ def _edit_outcome(tool_input: dict) -> tuple[str, int, int] | None:
     )
 
 
-def _write_outcome(tool_input: dict) -> tuple[str, int, int] | None:
+def _write_outcome(tool_input: Mapping) -> tuple[str, int, int] | None:
     """Post-write content and touched line range for a Write event: all of it."""
     content = tool_input.get("content", "")
     return content, 1, max(1, content.count("\n") + 1)
@@ -87,7 +88,7 @@ _OUTCOME_BY_TOOL = {"Edit": _edit_outcome, "Write": _write_outcome}
 
 
 def _report_block(
-    file_path: str, start_line: int, end_line: int, violations: list[LintViolation]
+    file_path: str, start_line: int, end_line: int, violations: Sequence[LintViolation]
 ) -> None:
     emit(
         f"[lint-gate] Blocked: {len(violations)} FP violation(s) in edited range "
@@ -100,7 +101,7 @@ def _report_block(
 
 
 def check_tool_event(
-    tool_name: str, tool_input: dict, config_path: str | None = None
+    tool_name: str, tool_input: Mapping, config_path: str | None = None
 ) -> int:
     """Evaluate a PreToolUse event. Returns 0 (allow) or 2 (block).
 

@@ -23,6 +23,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Mapping, Sequence
 
 
 def _emit(text: str) -> None:
@@ -41,7 +42,7 @@ def repo_item(url: str) -> re.Pattern:
     )
 
 
-def hook_lines(pad: str, hook: dict) -> list[str]:
+def hook_lines(pad: str, hook: Mapping) -> list[str]:
     lines = [f"{pad}- id: {hook['id']}\n"]
     for key in ("args", "stages"):
         if hook.get(key):
@@ -49,7 +50,7 @@ def hook_lines(pad: str, hook: dict) -> list[str]:
     return lines
 
 
-def block_lines(indent: int, url: str, rev: str, hooks: list[dict]) -> list[str]:
+def block_lines(indent: int, url: str, rev: str, hooks: Sequence[dict]) -> list[str]:
     pad = " " * indent
     return [
         f"{pad}- repo: {url}\n",
@@ -59,14 +60,14 @@ def block_lines(indent: int, url: str, rev: str, hooks: list[dict]) -> list[str]
     ]
 
 
-def find_block(lines: list[str], url: str) -> tuple[int, int] | None:
+def find_block(lines: Sequence[str], url: str) -> tuple[int, int] | None:
     """(index, indent) of the repo item for `url`, or None when absent."""
     item = repo_item(url)
     found = next(((i, m) for i, m in enumerate(map(item.match, lines)) if m), None)
     return None if found is None else (found[0], len(found[1].group(1)))
 
 
-def block_end(lines: list[str], start: int, indent: int) -> int:
+def block_end(lines: Sequence[str], start: int, indent: int) -> int:
     """Index one past the block, trailing blank lines included.
 
     The block runs to the first non-blank line at or left of its own dash.
@@ -84,7 +85,7 @@ def block_end(lines: list[str], start: int, indent: int) -> int:
     )
 
 
-def content_end(lines: list[str], start: int, indent: int) -> int:
+def content_end(lines: Sequence[str], start: int, indent: int) -> int:
     """Index one past the block's last non-blank line -- where to append to it.
 
     The mirror of block_end: appending has to stay *above* the trailing blanks
@@ -97,7 +98,7 @@ def content_end(lines: list[str], start: int, indent: int) -> int:
     return end
 
 
-def hook_span(lines: list[str], id_at: int, pad: str) -> int:
+def hook_span(lines: Sequence[str], id_at: int, pad: str) -> int:
     """Index one past the hook item whose `- id:` line is at `id_at`.
 
     A hook's own fields are indented deeper than its dash, so the first non-blank
@@ -114,7 +115,9 @@ def hook_span(lines: list[str], id_at: int, pad: str) -> int:
     )
 
 
-def absent_fields(lines: list[str], id_at: int, hook: dict) -> list[tuple[str, str]]:
+def absent_fields(
+    lines: Sequence[str], id_at: int, hook: Mapping
+) -> list[tuple[str, str]]:
     """(field, line) for each field we declare that this hook does not already have.
 
     Each line goes directly under the `- id:` line rather than at the end of the
@@ -131,7 +134,7 @@ def absent_fields(lines: list[str], id_at: int, hook: dict) -> list[tuple[str, s
 
 
 def backfill_fields(
-    lines: list[str], start: int, indent: int, hooks: list[dict]
+    lines: Sequence[str], start: int, indent: int, hooks: Sequence[dict]
 ) -> tuple[list[str], list[str]]:
     """Add fields we declare to a hook that is already present but lacks them.
 
@@ -163,7 +166,7 @@ def backfill_fields(
 
 
 def add_missing_hooks(
-    lines: list[str], start: int, indent: int, hooks: list[dict]
+    lines: Sequence[str], start: int, indent: int, hooks: Sequence[dict]
 ) -> tuple[list[str], list[str]]:
     """Append whatever hook ids the existing block lacks, in the given order.
 
@@ -185,7 +188,7 @@ def add_missing_hooks(
     ]
 
 
-def list_indent(lines: list[str], repos_at: int) -> int:
+def list_indent(lines: Sequence[str], repos_at: int) -> int:
     """The indent the file already uses for its repo items; 2 when it has none."""
     item = next(
         (m for m in (re.match(r"^(\s*)-\s", x) for x in lines[repos_at + 1 :]) if m),
@@ -194,7 +197,7 @@ def list_indent(lines: list[str], repos_at: int) -> int:
     return len(item.group(1)) if item else 2
 
 
-def insert(path: str, url: str, rev: str, hooks: list[dict]) -> None:
+def insert(path: str, url: str, rev: str, hooks: Sequence[dict]) -> None:
     try:
         with open(path, encoding="utf-8") as f:
             lines = f.readlines()

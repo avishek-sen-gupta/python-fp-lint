@@ -48,7 +48,7 @@ class TestCliLogging:
 
 class TestNoPrintInThePackage:
     def test_package_has_no_print_calls(self, tmp_path):
-        gate = LintGate(settings=LintSettings(ruff_select="T20", ast_grep_rules=[]))
+        gate = LintGate(settings=LintSettings(ruff_select="T20"))
         files = [
             os.path.join(PKG_DIR, f)
             for f in ("__main__.py", "hook_check.py", "output.py")

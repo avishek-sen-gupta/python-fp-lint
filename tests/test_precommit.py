@@ -10,7 +10,11 @@ from pathlib import Path
 import pytest
 from gitenv import clean_env
 
-from python_fp_lint.precommit import materialize_staged, staged_python_files
+from python_fp_lint.precommit import (
+    _narrow_to_requested,
+    materialize_staged,
+    staged_python_files,
+)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 CONFIG = os.path.join(REPO_ROOT, "config.example.json")
@@ -172,3 +176,21 @@ class TestPrecommitCLI:
         _git(repo, "add", "bad.py", "ok.py")
         assert _run_precommit(repo, "ok.py").returncode == 0
         assert _run_precommit(repo, "bad.py").returncode == 1
+
+
+class TestNarrowToRequested:
+    """An empty request means no narrowing: every staged file is linted."""
+
+    def test_no_paths_keeps_every_staged_file(self, tmp_path):
+        staged = ["a.py", "pkg/b.py"]
+        assert _narrow_to_requested(staged, (), str(tmp_path)) == staged
+
+    def test_paths_narrow_to_their_intersection(self, tmp_path):
+        requested = [str(tmp_path / "pkg" / "b.py"), str(tmp_path / "c.py")]
+        assert _narrow_to_requested(["a.py", "pkg/b.py"], requested, str(tmp_path)) == [
+            "pkg/b.py"
+        ]
+
+    def test_returns_a_new_list(self, tmp_path):
+        staged = ["a.py"]
+        assert _narrow_to_requested(staged, (), str(tmp_path)) is not staged

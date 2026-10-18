@@ -333,8 +333,8 @@ class TestBaselineRefusesToGuess:
             self.baseline = baseline
             self.format = "text"
             self.ruff_select = None
-            self.ast_grep_rules = None
-            self.exclude = None
+            self.ast_grep_rules = ""
+            self.exclude = ""
             self.max_complexity = None
             self.max_statements = None
             self.max_positional_args = None
@@ -775,8 +775,8 @@ class TestPrecommitWithoutBaselineIsUnchanged:
             baseline = None
             format = "text"
             ruff_select = None
-            ast_grep_rules = None
-            exclude = None
+            ast_grep_rules = ""
+            exclude = ""
             max_complexity = None
             max_statements = None
             max_positional_args = None
@@ -789,3 +789,17 @@ class TestPrecommitWithoutBaselineIsUnchanged:
         assert exc.value.code == 2
         err = capsys.readouterr().err
         assert err == "error: required lint backend(s) not found: ruff\n"
+
+
+class TestSplitList:
+    """A comma-separated flag becomes a list; an unused flag defaults to "",
+    which is the empty list -- never None."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [("", []), ("a", ["a"]), (" a , b ,", ["a", "b"])],
+    )
+    def test_splits(self, value, expected):
+        from python_fp_lint.__main__ import _split_list
+
+        assert _split_list(value) == expected

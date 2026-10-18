@@ -8,6 +8,7 @@ that are assigned more than once within the same scope.
 import ast
 import os
 from collections import defaultdict
+from collections.abc import Sequence
 
 import beniget
 
@@ -17,7 +18,7 @@ from python_fp_lint.result import BackendError, LintResult, LintViolation
 class ReassignmentGate:
     """Detects variable/parameter reassignment in Python files."""
 
-    def evaluate(self, changed_files: list[str], project_root: str) -> LintResult:
+    def evaluate(self, changed_files: Sequence[str], project_root: str) -> LintResult:
         py_files = [
             f
             for f in dict.fromkeys(changed_files)

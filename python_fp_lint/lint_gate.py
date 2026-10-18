@@ -9,7 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 
@@ -40,9 +40,9 @@ _DEFAULT_MAX_POSITIONAL_ARGS = 4
 _MAX_PATHS_PER_CALL = 1000
 
 
-def _chunked(items: list[str], size: int = _MAX_PATHS_PER_CALL) -> list[list[str]]:
+def _chunked(items: Sequence[str], size: int = _MAX_PATHS_PER_CALL) -> list[list[str]]:
     """Split a path list into subprocess-sized batches. Never yields an empty batch."""
-    return [items[i : i + size] for i in range(0, len(items), size)]
+    return [list(items[i : i + size]) for i in range(0, len(items), size)]
 
 
 @dataclass(frozen=True)
@@ -59,11 +59,12 @@ class Locations:
 @dataclass(frozen=True)
 class LintSettings:
     """What the gate enforces. A set field overrides the config file; an unset
-    one defers to it, and then to the built-in default."""
+    one defers to it, and then to the built-in default. For the collections,
+    unset is the empty collection -- there is no separate None."""
 
     ruff_select: str | None = None
-    ast_grep_rules: Sequence[str] | None = None
-    exclude: Sequence[str] | None = None
+    ast_grep_rules: Sequence[str] = ()
+    exclude: Sequence[str] = ()
     max_complexity: int | None = None
     max_statements: int | None = None
     max_positional_args: int | None = None
@@ -90,7 +91,7 @@ class LintGate:
     def _config(self, key):
         return _read_config(key, self.locations.config_path)
 
-    def evaluate(self, changed_files: list[str], project_root: str) -> LintResult:
+    def evaluate(self, changed_files: Sequence[str], project_root: str) -> LintResult:
         py_files = self.filter_excluded(
             _filter_python_files(changed_files), project_root
         )
@@ -105,13 +106,12 @@ class LintGate:
         return LintResult(passed=len(violations) == 0, violations=violations)
 
     def resolve_exclude(self) -> list[str]:
-        """Exclude globs in force: constructor > config file > nothing."""
-        if self.settings.exclude is not None:
+        """Exclude globs in force: constructor > config file > nothing. An
+        empty list at either level is "none given" and falls through."""
+        if self.settings.exclude:
             return list(self.settings.exclude)
         config_val = self._config("exclude")
-        if config_val and isinstance(config_val, list):
-            return config_val
-        return []
+        return list(config_val) if isinstance(config_val, list) else []
 
     def resolve_baseline(self) -> str | None:
         """Baseline file in force: constructor > config file > none."""
@@ -125,22 +125,24 @@ class LintGate:
         """True when path matches one of the configured exclude globs."""
         return is_excluded(path, project_root, self.resolve_exclude())
 
-    def filter_excluded(self, files: list[str], project_root: str) -> list[str]:
+    def filter_excluded(self, files: Sequence[str], project_root: str) -> list[str]:
         """Drop every path matching an exclude glob."""
         patterns = self.resolve_exclude()
         if not patterns:
-            return files
+            return list(files)
         return [f for f in files if not is_excluded(f, project_root, patterns)]
 
-    def _resolve_ast_grep_rules(self) -> list[str] | None:
-        if self.settings.ast_grep_rules is not None:
+    def _resolve_ast_grep_rules(self) -> list[str]:
+        """Rule IDs to keep: constructor > config file > all. Empty at every
+        level means no filter, so every rule runs."""
+        if self.settings.ast_grep_rules:
             return list(self.settings.ast_grep_rules)
         config_val = self._config("ast_grep_rules")
-        if config_val and isinstance(config_val, list):
-            return config_val
-        return None
+        return list(config_val) if isinstance(config_val, list) else []
 
-    def _run_ast_grep(self, files: list[str], project_root: str) -> list[LintViolation]:
+    def _run_ast_grep(
+        self, files: Sequence[str], project_root: str
+    ) -> list[LintViolation]:
         rules_dir = self._resolve_rules_dir(project_root)
         if rules_dir is None:
             return []
@@ -164,7 +166,7 @@ class LintGate:
         )
         violations = _run_sg(sg, scan_dir, files)
         allowed = self._resolve_ast_grep_rules()
-        if allowed is not None:
+        if allowed:
             violations = [v for v in violations if v.rule in allowed]
         return violations
 
@@ -205,7 +207,7 @@ class LintGate:
             return _DEFAULT_MAX_POSITIONAL_ARGS
         return _validate_ceiling("max_positional_args", config_val)
 
-    def _run_ruff(self, files: list[str]) -> list[LintViolation]:
+    def _run_ruff(self, files: Sequence[str]) -> list[LintViolation]:
         ruff = _find_ruff()
         if ruff is None:
             return []
@@ -219,7 +221,7 @@ class LintGate:
         )
 
     def _run_reassignment(
-        self, files: list[str], project_root: str
+        self, files: Sequence[str], project_root: str
     ) -> list[LintViolation]:
         result = ReassignmentGate().evaluate(files, project_root)
         return result.violations
@@ -274,7 +276,7 @@ def _walk_directory(directory: str) -> list[str]:
     ]
 
 
-def _expand_paths(paths: list[str]) -> list[str]:
+def _expand_paths(paths: Sequence[str]) -> list[str]:
     """Expand directories, globs, and plain files into a flat list of paths."""
     expanded = []
     for p in paths:
@@ -287,7 +289,7 @@ def _expand_paths(paths: list[str]) -> list[str]:
     return expanded
 
 
-def _filter_python_files(files: list[str]) -> list[str]:
+def _filter_python_files(files: Sequence[str]) -> list[str]:
     """Expand dirs/globs, then filter to existing, unique .py files."""
     seen = set()
     result = []
@@ -337,7 +339,7 @@ def _relative_path(path: str, project_root: str) -> str:
     return chosen.replace(os.sep, "/")
 
 
-def is_excluded(path: str, project_root: str, patterns: list[str]) -> bool:
+def is_excluded(path: str, project_root: str, patterns: Sequence[str]) -> bool:
     """True when path matches any of the exclude globs.
 
     Globs are matched against the path relative to project_root. A pattern
@@ -475,7 +477,9 @@ def _read_config(key: str, config_path: str | None = None):
         raise ConfigError(f"cannot read config file {config_path}: {exc}") from exc
 
 
-def _run_sg_once(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolation]:
+def _run_sg_once(
+    sg_path: str, rules_dir: str, files: Sequence[str]
+) -> list[LintViolation]:
     try:
         result = subprocess.run(
             [
@@ -525,7 +529,7 @@ def _sg_entries(stdout: str) -> list[dict]:
     return entries
 
 
-def _sg_violation(entry: dict) -> LintViolation:
+def _sg_violation(entry: Mapping) -> LintViolation:
     return LintViolation(
         rule=entry.get("ruleId", "unknown"),
         file=entry.get("file", ""),
@@ -547,7 +551,7 @@ def _validate_max_complexity(value) -> int:
 
 def _run_ruff_once(
     ruff_path: str,
-    files: list[str],
+    files: Sequence[str],
     select: str,
     max_complexity: int,
     max_statements: int = _DEFAULT_MAX_STATEMENTS,
@@ -605,7 +609,7 @@ def _run_ruff_once(
     ]
 
 
-def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolation]:
+def _run_sg(sg_path: str, rules_dir: str, files: Sequence[str]) -> list[LintViolation]:
     # The chunk size is passed explicitly rather than left to the default, so
     # it is read at call time -- a default argument binds once at def time and
     # could not be monkeypatched by a test.
@@ -618,7 +622,7 @@ def _run_sg(sg_path: str, rules_dir: str, files: list[str]) -> list[LintViolatio
 
 def _run_ruff(
     ruff_path: str,
-    files: list[str],
+    files: Sequence[str],
     select: str,
     max_complexity: int,
     max_statements: int = _DEFAULT_MAX_STATEMENTS,

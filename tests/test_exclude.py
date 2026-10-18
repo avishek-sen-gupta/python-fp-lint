@@ -118,8 +118,26 @@ class TestExcludeFromConfig:
         target = _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path, exclude=["generated/"])
         gate = LintGate(
-            locations=Locations(config_path=path), settings=LintSettings(exclude=[])
+            locations=Locations(config_path=path),
+            settings=LintSettings(exclude=["vendor/"]),
         )
+        assert gate.evaluate([target], str(tmp_path)).passed is False
+
+    def test_empty_constructor_value_defers_to_config(self, tmp_path):
+        """No exclude given is the empty list, which falls through to the
+        config file -- there is no separate "unset"."""
+        target = _dirty(tmp_path, "generated/api.py")
+        path = _write_config(tmp_path, exclude=["generated/"])
+        gate = LintGate(
+            locations=Locations(config_path=path), settings=LintSettings(exclude=())
+        )
+        assert gate.evaluate([target], str(tmp_path)).passed is True
+
+    def test_empty_everywhere_excludes_nothing(self, tmp_path):
+        target = _dirty(tmp_path, "generated/api.py")
+        path = _write_config(tmp_path, exclude=[])
+        gate = LintGate(locations=Locations(config_path=path))
+        assert gate.resolve_exclude() == []
         assert gate.evaluate([target], str(tmp_path)).passed is False
 
 

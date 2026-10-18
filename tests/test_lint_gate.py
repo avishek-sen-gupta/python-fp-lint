@@ -2,6 +2,7 @@
 """Tests for the unified LintGate (ast-grep + Ruff + beniget)."""
 
 import dataclasses
+import json
 import os
 import shutil
 from pathlib import Path
@@ -569,6 +570,57 @@ class TestRuffSelectConfig:
 
 @needs_sg
 class TestAstGrepRulesConfig:
+    """No rule list given is the empty list, which filters nothing: all rules
+    run. The constructor and the config file read an empty list the same way."""
+
+    _CODE = "items = []\nitems.append(1)\nd = {}\nd['k'] = 'v'\n"
+
+    def _rules(self, tmp_path, rules_dir, config, settings):
+        config_path = tmp_path / "fp.json"
+        config_path.write_text(json.dumps(config))
+        path = _make_file(tmp_path, "widget.py", self._CODE)
+        gate = LintGate(
+            locations=Locations(rules_dir=rules_dir, config_path=str(config_path)),
+            settings=settings,
+        )
+        return [v.rule for v in gate.evaluate([path], str(tmp_path)).violations]
+
+    @pytest.mark.parametrize(
+        ("config", "settings"),
+        [
+            ({}, LintSettings()),
+            ({"ast_grep_rules": []}, LintSettings()),
+            ({}, LintSettings(ast_grep_rules=())),
+        ],
+    )
+    def test_empty_rule_list_runs_every_rule(
+        self, tmp_path, rules_dir, config, settings
+    ):
+        rules = self._rules(tmp_path, rules_dir, config, settings)
+        assert [
+            rules.count(r) for r in ("no-list-append", "no-subscript-mutation")
+        ] == [
+            1,
+            1,
+        ]
+
+    def test_empty_constructor_list_defers_to_config(self, tmp_path, rules_dir):
+        rules = self._rules(
+            tmp_path,
+            rules_dir,
+            {"ast_grep_rules": ["no-list-append"]},
+            LintSettings(ast_grep_rules=()),
+        )
+        assert [
+            rules.count(r) for r in ("no-list-append", "no-subscript-mutation")
+        ] == [
+            1,
+            0,
+        ]
+
+    def test_settings_default_to_empty_collections(self):
+        assert (LintSettings().ast_grep_rules, LintSettings().exclude) == ((), ())
+
     def test_constructor_filters_rules(self, tmp_path, rules_dir):
         path = _make_file(
             tmp_path,

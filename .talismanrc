@@ -31,7 +31,7 @@ fileignoreconfig:
 - filename: tests/test_exclude.py
   checksum: a6a8584250bdc1a1f95c4c2ca788b007a608e48102664037108b0b913c4d7b1e
 - filename: README.md
-  checksum: 275f0ea5123f96e951b8115903b821413c14564e560e44d51835833a6c8b17ad
+  checksum: ddb82d680be98bb4a4f7ba5d13cb8336ceec05e896ced32c88c04fcc249c5b2e
 - filename: tests/test_max_complexity.py
   checksum: 7a10002a1f49e0636d3735121964f16195e8b8dcaa6d1523b2d6dba998f3cf81
 - filename: tests/test_max_statements.py

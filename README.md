@@ -243,9 +243,14 @@ its inputs: `config_path`, `rules_dir`, `rules_cache_root` and `baseline`. `Lint
 what it enforces, and each field set there overrides the same key in the config file. Either
 can be omitted.
 
-Omitting a key (or passing `None`) uses the built-in default: for Ruff, the codes listed under
+Omitting a key uses the built-in default: for Ruff, the codes listed under
 [Ruff rules](#ruff-rules-batteries-included--fp-specific); for ast-grep, every rule file in the rules
 directory; for the ceilings, the defaults stated in their sections below.
+
+For the two list settings, `ast_grep_rules` and `exclude`, an empty list is the same as
+omitting them, at every level: `LintSettings(exclude=())`, `"exclude": []` in the config and
+an absent `--exclude` all mean "none given here", so the next source applies. In particular an
+empty `ast_grep_rules` is no filter at all, and every rule runs.
 
 | Key | Meaning |
 |---|---|
