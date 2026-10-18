@@ -9,5 +9,5 @@ rule:
   has:
     field: value
     kind: none
-message: "None default parameter — use empty structures or sentinel objects"
+message: "None default parameter — use an immutable empty value (`()`, `frozenset()`) or a sentinel object, not `[]`/`{}` (Ruff B006)"
 severity: warning

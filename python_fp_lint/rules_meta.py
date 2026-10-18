@@ -36,9 +36,11 @@ def _ast_grep_rules() -> list[dict]:
 
 
 def _ruff_rules() -> list[dict]:
-    """Return metadata for Ruff rules selected in LintGate._RUFF_SELECT."""
-    # Ruff rule codes selected in LintGate: E, F, W, I, B, UP, SIM, RUF, BLE, T20,
-    # TID252, C901, PLR0915
+    """Return metadata for the Ruff rules in lint_gate._DEFAULT_RUFF_SELECT.
+
+    Kept in the same order as that constant; tests/test_rule_inventory.py
+    fails if the two drift apart.
+    """
     return [
         {
             "id": "E",
@@ -115,6 +117,18 @@ def _ruff_rules() -> list[dict]:
         {
             "id": "PLR0915",
             "message": "Too many statements in a function",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "PLR0917",
+            "message": "Too many positional parameters in a function",
+            "severity": "warning",
+            "backend": "ruff",
+        },
+        {
+            "id": "ANN401",
+            "message": "Explicit Any in a function parameter or return annotation",
             "severity": "warning",
             "backend": "ruff",
         },

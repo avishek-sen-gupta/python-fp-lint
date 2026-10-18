@@ -1,0 +1,33 @@
+id: no-assertionless-test
+language: python
+rule:
+  # A test_* function with nothing in it that can fail it. Deliberately the
+  # narrow half of the old test-vacuous rule (disabled-rules/): any check at
+  # all clears it, and how strong that check is belongs to no-weak-assert.
+  all:
+    - kind: function_definition
+    - has:
+        field: name
+        regex: "^test_"
+    - not:
+        has:
+          stopBy: end
+          any:
+            - kind: assert_statement
+            # pytest.raises / pytest.warns / pytest.fail
+            - pattern: pytest.$CHECK($$$)
+              has:
+                field: function
+                has:
+                  field: attribute
+                  regex: "^(raises|warns|fail)$"
+            # mock.assert_called_once_with(...), self.assertEqual(...)
+            - kind: call
+              has:
+                field: function
+                kind: attribute
+                has:
+                  field: attribute
+                  regex: "^assert"
+message: "Test with no assertion — assert a concrete outcome, or use pytest.raises for an expected error"
+severity: warning

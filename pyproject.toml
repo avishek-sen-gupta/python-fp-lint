@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "python-fp-lint"
 version = "0.1.0"
-description = "Functional-programming lint rules for Python — Semgrep + ast-grep + beniget"
+description = "Functional-programming lint rules for Python — ast-grep + Ruff + beniget"
 requires-python = ">=3.10"
 dependencies = [
     "beniget>=0.5.0",
@@ -13,7 +13,9 @@ dependencies = [
     # Backend binaries ship as wheels, so an install is self-contained: no
     # separate `brew install ast-grep` step before the gate actually works.
     "ast-grep-cli>=0.30",
-    "ruff>=0.5",
+    # 0.16 is the first release where PLR0917 is stable; before that it only
+    # runs under --preview, and selecting it is silently a no-op.
+    "ruff>=0.16",
 ]
 
 [project.scripts]
@@ -26,7 +28,7 @@ dev = ["pytest>=8.0", "black>=24.0"]
 include = ["python_fp_lint*"]
 
 [tool.setuptools.package-data]
-python_fp_lint = ["sgconfig.yml", "rules/*.yml", "rules/disabled/*.yml"]
+python_fp_lint = ["sgconfig.yml", "rules/*.yml", "disabled-rules/*.yml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

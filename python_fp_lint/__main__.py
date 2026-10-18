@@ -37,6 +37,7 @@ def _build_gate(args) -> LintGate:
         exclude=_split_list(getattr(args, "exclude", None)),
         max_complexity=getattr(args, "max_complexity", None),
         max_statements=getattr(args, "max_statements", None),
+        max_positional_args=getattr(args, "max_positional_args", None),
         config_path=args.config or None,
         baseline=getattr(args, "baseline", None),
     )
@@ -488,6 +489,16 @@ def main():
             help=(
                 "Maximum statements per function, reported as Ruff PLR0915 "
                 "(overrides the config file's `max_statements`)"
+            ),
+        )
+        p.add_argument(
+            "--max-positional-args",
+            type=int,
+            default=None,
+            metavar="N",
+            help=(
+                "Maximum positional parameters per function, reported as Ruff "
+                "PLR0917 (overrides the config file's `max_positional_args`)"
             ),
         )
         p.add_argument(

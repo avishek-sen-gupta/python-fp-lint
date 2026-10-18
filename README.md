@@ -5,28 +5,75 @@
 
 **python-fp-lint** is a functional-programming linter for Python. It detects mutation, reassignment, and impurity patterns that violate FP discipline, combining three complementary analysis backends:
 
-1. **ast-grep** (27 rules) — tree-sitter AST analysis for FP-specific mutation rules
+1. **ast-grep** (36 rules) — tree-sitter AST analysis for FP-specific mutation rules
 2. **Ruff** (batteries-included + FP-specific) — Rust-based linter for unused imports, style errors, complexity, and more
 3. **beniget** — def-use chain analysis for variable reassignment detection across scopes
 
-The unified `LintGate` runs all three backends in sequence. Each backend that is available contributes violations; missing tools are silently skipped.
+The unified `LintGate` runs all three backends in sequence. By default a missing `sg` or `ruff` is skipped without error; pass `--strict` (as the pre-commit hooks do) to fail instead.
 
 ## Rules
 
-### ast-grep rules (35)
+### At a glance
 
-| Category | Rules |
-|----------|-------|
-| **List mutation** | `no-list-append`, `no-list-extend`, `no-list-insert`, `no-list-pop`, `no-list-remove` |
-| **Dict mutation** | `no-dict-clear`, `no-dict-update`, `no-dict-setdefault` |
-| **Set mutation** | `no-set-add`, `no-set-discard` |
-| **Subscript mutation** | `no-subscript-mutation`, `no-subscript-del`, `no-subscript-augmented-mutation`, `no-subscript-tuple-mutation`, `no-setitem-call` |
-| **Augmented assignment** | `no-local-augmented-mutation`, `no-attribute-augmented-mutation` |
-| **None / Optional** | `no-is-none`, `no-is-not-none`, `no-optional-none`, `no-none-default-param`, `no-or-none-fallback`, `no-none-case-pattern` |
-| **Style** | `no-static-method`, `no-classmethod-utility` |
-| **Structural** | `no-deep-nesting`, `no-loop-mutation`, `no-mutation-outside-init` |
-| **Type annotations** | `no-list-dict-param-annotation`, `no-unfrozen-dataclass`, `no-any-type`, `no-object-type`, `no-str-enum` |
-| **Test quality** | `no-weak-assert`, `no-xfail-without-reason` |
+Every check, grouped by what it is for. Each violation is reported as
+`[rule] file:line — message`, where `rule` is one of the IDs listed here.
+
+| Kind of lint | What it catches | Rules |
+|---|---|---|
+| **In-place mutation of collections** | Calling a mutating method on a list, dict or set, or writing/deleting through a subscript | [List, dict, set and subscript rules](#ast-grep-rules-36) (`no-list-*`, `no-dict-*`, `no-set-*`, `no-subscript-*`, `no-setitem-call`) |
+| **Mutation of names and objects** | `+=`-style updates, mutation inside loops, attributes assigned after construction | `no-local-augmented-mutation`, `no-attribute-augmented-mutation`, `no-loop-mutation`, `no-mutation-outside-init` |
+| **Reassignment** | Binding the same name twice in one scope, parameters included | [`reassignment`](#reassignment-beniget) (beniget) |
+| **None and Optional** | Using `None` to model absence: `is None` checks, `Optional[...]`, `None` defaults, `None` match cases, `or None` | `no-is-none`, `no-is-not-none`, `no-optional-none`, `no-none-default-param`, `no-none-case-pattern`, `no-or-none-fallback` |
+| **Types** | Escape-hatch types (`Any`, `object`), mutable dataclasses, concrete `list`/`dict` parameter types, `StrEnum` | `no-any-type`, `ANN401`, `no-object-type`, `no-unfrozen-dataclass`, `no-list-dict-param-annotation`, `no-str-enum` |
+| **Function size and shape** | Too many branches, too many statements, too many positional parameters, nested `for`/`if` | `C901` (≤ 3), `PLR0915` (≤ 10), `PLR0917` (≤ 4), `no-deep-nesting` |
+| **Code organisation** | `@staticmethod` and `@classmethod`, which belong at module level or as instance behaviour | `no-static-method`, `no-classmethod-utility` |
+| **Test quality** | Tests that check nothing, assertions that cannot fail usefully, `xfail` with no stated reason | `no-assertionless-test`, `no-weak-assert`, `no-xfail-without-reason` |
+| **General hygiene** | Style errors, unused/undefined names, import order and relative imports, common bugs, outdated syntax, blind `except`, `print` | Ruff `E`, `W`, `F`, `I`, `TID252`, `B`, `UP`, `SIM`, `RUF`, `BLE`, `T20` |
+
+Two further gates are installed separately and are not part of `LintGate`: a
+[Pyright gate](#pyright-gate) for strict type checking and a [Black hook](#black-hook) for
+formatting.
+
+### ast-grep rules (36)
+
+| Category | Rule | Flags | Write instead |
+|----------|------|-------|---------------|
+| **List mutation** | `no-list-append` | `xs.append(x)` | concatenation or a comprehension |
+| | `no-list-extend` | `xs.extend(ys)` | `xs + ys` |
+| | `no-list-insert` | `xs.insert(i, x)` | slicing + concatenation |
+| | `no-list-pop` | `xs.pop()` | slicing |
+| | `no-list-remove` | `xs.remove(x)` | a filtering comprehension |
+| **Dict mutation** | `no-dict-clear` | `d.clear()` | bind a new empty dict |
+| | `no-dict-update` | `d.update(other)` | `{**d, **other}` |
+| | `no-dict-setdefault` | `d.setdefault(k, v)` | an explicit conditional, or a `defaultdict` at construction |
+| **Set mutation** | `no-set-add` | `s.add(x)` | `s \| {x}` |
+| | `no-set-discard` | `s.discard(x)` | `s - {x}` |
+| **Subscript mutation** | `no-subscript-mutation` | `xs[i] = v`, `d[k] = v` | comprehensions or immutable update patterns |
+| | `no-subscript-del` | `del d[k]` | comprehensions or immutable update patterns |
+| | `no-subscript-augmented-mutation` | `d[k] += 1` | immutable update patterns |
+| | `no-subscript-tuple-mutation` | `a[i], a[j] = ...` | immutable update patterns |
+| | `no-setitem-call` | `d.__setitem__(k, v)`, `operator.setitem(...)` | comprehensions or immutable update patterns |
+| **Augmented assignment** | `no-local-augmented-mutation` | `total += x` on a local | a new binding, or `sum`/`reduce` |
+| | `no-attribute-augmented-mutation` | `self.count += 1` | return a new object |
+| **None / Optional** | `no-is-none` | `x is None` | `match`, or an Option type |
+| | `no-is-not-none` | `x is not None` | `match`, or an Option type |
+| | `no-optional-none` | `Optional[T]`, `T \| None` | sentinel values or separate code paths |
+| | `no-none-default-param` | `def f(x=None)` | an immutable empty default (`()`, `frozenset()`) or a sentinel — not `[]`/`{}`, which Ruff's `B006` flags |
+| | `no-or-none-fallback` | `value or None` | pass the value through unchanged |
+| | `no-none-case-pattern` | `case None:` | a sentinel case or an Option type |
+| **Style** | `no-static-method` | `@staticmethod` | a module-level function |
+| | `no-classmethod-utility` | any `@classmethod` | a module-level function or instance behaviour |
+| **Structural** | `no-deep-nesting` | a `for` or `if` nested inside another `for` or `if` | comprehensions, `itertools`, or a helper function |
+| | `no-loop-mutation` | a mutating call, subscript write or `+=` inside a `for` body | comprehensions, `reduce` |
+| | `no-mutation-outside-init` | `self.x = ...` outside `__init__` | construct complete objects; never mutate them |
+| **Type annotations** | `no-list-dict-param-annotation` | `list`/`dict` as a parameter type | `Sequence`/`Mapping` from `collections.abc` |
+| | `no-unfrozen-dataclass` | `@dataclass` without `frozen=True` | `@dataclass(frozen=True)` |
+| | `no-any-type` | explicit `Any`, anywhere in an annotation | a precise type, `Protocol`, `TypeVar` or union |
+| | `no-object-type` | `object` used as a type | a precise type, `Protocol` or union |
+| | `no-str-enum` | `StrEnum`, `class E(str, Enum)` | a plain `Enum`, converted at the boundary |
+| **Test quality** | `no-assertionless-test` | a `test_*` function with no `assert`, `pytest.raises`/`warns`/`fail`, or `.assert*()` call | assert a concrete outcome, or `pytest.raises` for an expected error |
+| | `no-weak-assert` | asserting existence, containment or truthiness | assert a concrete expected value |
+| | `no-xfail-without-reason` | `@pytest.mark.xfail` with no `reason=` | state why, and reference an issue |
 
 `no-any-type` bans *explicit* `typing.Any` usage only (`x: Any`, `-> Any`, `dict[str, Any]`, ...).
 It cannot see *implicit* Any from missing annotations (e.g. `def f(x):`) — pyright's
@@ -34,9 +81,13 @@ It cannot see *implicit* Any from missing annotations (e.g. `def f(x):`) — pyr
 complementary case and are not duplicated here. `no-object-type` covers the same ground for
 `object`, the other untyped-blob escape hatch.
 
-`no-weak-assert` flags each individual weak assertion (existence, containment, truthiness).
-It replaces the coarser `test-vacuous` rule in `rules/disabled/`, which judged a whole test
-function rather than a single statement.
+`no-weak-assert` and `no-assertionless-test` split the job of the older `test-vacuous` rule,
+kept in `disabled-rules/`. That rule flagged any test without an `==`/`<`-style comparison,
+which made it fire on 254 of this repo's own 520 tests: `not in` checks, `is True`, and
+`pytest.raises` tests all tripped it. Now `no-weak-assert` judges each assertion on its own,
+and `no-assertionless-test` catches only the case it cannot see, a test with no check at
+all. A test whose assertions live in a helper it calls is flagged too; name the helper's
+outcome in the test, or have the helper return a value the test asserts on.
 
 ### Ruff rules (batteries-included + FP-specific)
 
@@ -55,7 +106,21 @@ function rather than a single statement.
 | `TID252` | Relative import detection |
 | `C901` | Cyclomatic complexity — ceiling configurable via `max_complexity`, default **3** (see [Cyclomatic complexity](#cyclomatic-complexity)) |
 | `PLR0915` | Statement count per function — ceiling configurable via `max_statements`, default **10** (see [Statement count](#statement-count)) |
+| `PLR0917` | Positional parameters per function — ceiling configurable via `max_positional_args`, default **4** (see [Positional parameters](#positional-parameters)) |
 | `ANN401` | Explicit `Any` in function parameter and return annotations — partial overlap with `no-any-type`, which also covers variable annotations and `Any` nested in generics |
+
+### Reassignment (beniget)
+
+Reported as rule `reassignment`. Using beniget's def-use chains, it flags every binding of
+a name after the first within a single scope (module, function, class or comprehension), parameters included:
+
+```
+[reassignment] src/handler.py:12 — 'result' reassigned (scope: FunctionDef)
+```
+
+Redefined functions and classes, and repeated imports, are not counted. A name rebound in
+a *nested* scope is a new variable, not a reassignment. This check has no config switch:
+it always runs.
 
 ## Setup
 
@@ -137,15 +202,19 @@ uv run python -m python_fp_lint check --config fp.json --max-complexity 5 src/
 
 # Raise or lower the per-function statement ceiling
 uv run python -m python_fp_lint check --config fp.json --max-statements 20 src/
+
+# Raise or lower the per-function positional-parameter ceiling
+uv run python -m python_fp_lint check --config fp.json --max-positional-args 6 src/
 ```
 
 **Config file** (any path you like — you name it with `--config`; see `config.example.json`):
 
 ```json
 {
-  "ruff_select": "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,PLR0915",
+  "ruff_select": "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,PLR0915,PLR0917,ANN401",
   "max_complexity": 3,
   "max_statements": 10,
+  "max_positional_args": 4,
   "ast_grep_rules": ["no-list-append", "no-dict-update"],
   "exclude": ["generated/", "**/migrations/**", "*_pb2.py"]
 }
@@ -160,10 +229,13 @@ gate = LintGate(
     exclude=["generated/"],
     max_complexity=5,
     max_statements=20,
+    max_positional_args=6,
 )
 ```
 
-Omitting a key (or passing `None`) uses all available rules for that backend.
+Omitting a key (or passing `None`) uses the built-in default: for Ruff, the codes listed under
+[Ruff rules](#ruff-rules-batteries-included--fp-specific); for ast-grep, every rule file in the rules
+directory; for the ceilings, the defaults stated in their sections below.
 
 | Key | Meaning |
 |---|---|
@@ -239,6 +311,39 @@ Two things worth knowing:
 
 Like `max_complexity`, the setting is passed to Ruff as an inline `--config` override, so
 it beats any `pyproject.toml` in the project being scanned.
+
+### Positional parameters
+
+`max_positional_args` caps how many **positional** parameters a single function may
+declare. Keyword-only parameters (those after a bare `*`), `*args`, `**kwargs` and a
+method's `self`/`cls` are not counted; positional-only parameters (before a `/`) are. A
+function over the cap is reported as Ruff's `PLR0917`:
+
+```
+[PLR0917] src/handler.py:42 — Too many positional arguments (6 > 4)
+```
+
+The default is **4** — deliberately stricter than Ruff's own default of 5. The usual fix
+is not to bundle the parameters into a mutable bag but to make the trailing ones
+keyword-only, so call sites name them, or to group related ones into a frozen dataclass.
+Set the ceiling wherever you like:
+
+```jsonc
+{ "max_positional_args": 6 }   // or --max-positional-args 6, or LintGate(max_positional_args=6)
+```
+
+`0` fails every function that takes a positional parameter and is accepted; a negative or
+non-integer value is a config error.
+
+Two things worth knowing:
+
+- **It needs Ruff 0.16 or later.** Earlier releases ship `PLR0917` as a preview rule, and
+  selecting it without `--preview` is silently a no-op. The package depends on
+  `ruff>=0.16`, but a different `ruff` earlier on `PATH` is the one that runs.
+- **`PLR0917` must stay in `ruff_select`.** If you override `ruff_select` and leave it
+  out, `max_positional_args` silently stops applying. The built-in default includes it.
+
+The total parameter count (Ruff's `PLR0913`, `max-args`) is not gated.
 
 ### Excluding files
 
@@ -356,11 +461,20 @@ uv run pytest tests/ -x -q
 
 # Individual test files
 uv run pytest tests/test_ast_grep_rules.py -x -q
-uv run pytest tests/test_lint_gate.py -x -q
-uv run pytest tests/test_cli.py -x -q
-uv run pytest tests/test_reassignment_gate.py -x -q
-uv run pytest tests/test_result.py -x -q
 ```
+
+| Area | Test files |
+|---|---|
+| Rules | `test_ast_grep_rules.py`, `test_ruff_integration.py`, `test_reassignment_gate.py`, `test_rule_inventory.py` |
+| Ceilings | `test_max_complexity.py`, `test_max_statements.py`, `test_max_positional_args.py` |
+| Gate and config | `test_lint_gate.py`, `test_backends.py`, `test_config.py`, `test_exclude.py`, `test_result.py` |
+| Entry points | `test_cli.py`, `test_precommit.py`, `test_hook_check.py` |
+| Ratchet | `test_ratchet.py`, `test_baseline.py` |
+| Installers | `test_precommit_lint_installer.py`, `test_precommit_pyright_installer.py`, `test_precommit_black_installer.py` |
+| Test harness | `test_fixture_isolation.py` |
+
+`test_rule_inventory.py` guards the places this README, `config.example.json` and the `rules`
+command restate the rule list, so a rule added in one place and not the others fails the build.
 
 The test suite includes a self-lint integration test that runs `LintGate` on this repo's own source code and verifies violations are detected.
 
@@ -401,7 +515,7 @@ From the root of the project you want to gate:
 /path/to/python-fp-lint/install-precommit-lint.sh
 ```
 
-It copies the 27 ast-grep rule files into `.python-fp-lint/` at the repo root, seeds `fp.json`
+It copies the ast-grep rules into `.python-fp-lint/` at the repo root, seeds `fp.json`
 from `config.example.json` with `lint_rules_dir` pointing there, wires the commit gate and the
 on-demand [`python-fp-lint-check`](#linting-without-committing) hook into
 `.pre-commit-config.yaml`, and runs `pre-commit install`. Re-running refreshes the rules, adds
@@ -754,8 +868,9 @@ worktree materializes all of it, so a file outside your cone still contributes.
 
 Two things the number is sensitive to:
 
-- **`C901` and `PLR0915` are ceiling rules**, so the total moves when `max_complexity` or
-  `max_statements` change, not only when code changes. Editing a rule file or changing
+- **`C901`, `PLR0915` and `PLR0917` are ceiling rules**, so the total moves when
+  `max_complexity`, `max_statements` or `max_positional_args` change, not only when code
+  changes. Editing a rule file or changing
   `ruff_select` / `ast_grep_rules` does the same. The baseline records no fingerprint of the
   ruleset, so **re-run `baseline update` deliberately after any such change** — otherwise the
   ratchet banks a windfall from a raised ceiling, or blocks every commit over a new rule.
@@ -788,12 +903,15 @@ python_fp_lint/
 ├── result.py              # LintResult, LintViolation dataclasses
 ├── rules_meta.py          # Rule metadata reader (for CLI rules/schema commands)
 ├── precommit.py           # Staged-blob linting for the git commit gate
+├── hook_check.py          # PreToolUse event handling behind `hook-check`
+├── patterns_report.py     # Standalone formatter for raw `sg scan --json` output (unused by the CLI)
 ├── ratchet.py             # Whole-index total, verdict and auto-tighten
 ├── baseline.py            # The ratchet's baseline file and path resolution
 ├── __init__.py            # Public API: LintGate, LintResult, LintViolation
 ├── __main__.py            # CLI entry point (text + JSON output)
 ├── sgconfig.yml           # ast-grep configuration
-└── rules/                 # 27 ast-grep rule files (.yml)
+├── rules/                 # 36 ast-grep rule files (.yml)
+└── disabled-rules/        # Rules kept for reference; outside rules/ because ast-grep scans it recursively
 
 hooks/
 ├── lint-check.sh          # Claude Code PreToolUse hook (Edit + Write)
@@ -819,10 +937,12 @@ uninstall-precommit-pyright.sh    # Undoes install-precommit-pyright.sh
 install-precommit-black.sh        # Wires Black into .pre-commit-config.yaml
 uninstall-precommit-black.sh      # Undoes install-precommit-black.sh
 .pre-commit-hooks.yaml            # Hook manifest for the pre-commit framework
+
+precommit-scripts/                # This repo's own terminology guard (betterleaks), not shipped
 ```
 
-Each backend is called in sequence: ast-grep, Ruff, beniget. Missing tools are silently skipped —
-pass `--strict` to fail loudly instead.
+Each backend is called in sequence: ast-grep, Ruff, beniget. By default a missing tool is skipped
+without error; pass `--strict` to fail loudly instead. The pre-commit hooks always pass it.
 
 ## Design Decisions
 
@@ -832,7 +952,7 @@ Ruff reimplements popular Flake8 plugins (pycodestyle, Pyflakes, bugbear, isort,
 
 ### Why ast-grep (not hand-written AST visitors)
 
-ast-grep uses tree-sitter to parse Python's concrete syntax tree and match against declarative YAML patterns. A rule like "flag `$LIST.append($ITEM)` inside a `for` loop" is a few lines of YAML; the equivalent `ast.NodeVisitor` in Python would be 50+ lines of imperative traversal code. Declarative rules are easier to review, compose (via `any:`, `all:`, `inside:`), and maintain. ast-grep is also written in Rust, so scanning 27 rules across a codebase adds negligible overhead.
+ast-grep uses tree-sitter to parse Python's concrete syntax tree and match against declarative YAML patterns. A rule like "flag `$LIST.append($ITEM)` inside a `for` loop" is a few lines of YAML; the equivalent `ast.NodeVisitor` in Python would be 50+ lines of imperative traversal code. Declarative rules are easier to review, compose (via `any:`, `all:`, `inside:`), and maintain. ast-grep is also written in Rust, so scanning 36 rules across a codebase adds negligible overhead.
 
 ### Why not Semgrep
 

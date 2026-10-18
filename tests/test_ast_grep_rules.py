@@ -678,7 +678,7 @@ class TestMutationOutsideInitRule:
 
 
 # ---------------------------------------------------------------------------
-# Test-quality rules (xfail reason, weak assertions)
+# Test-quality rules (xfail reason, weak assertions, assertion-less tests)
 # ---------------------------------------------------------------------------
 
 
@@ -778,24 +778,97 @@ class TestWeakAssertRule:
         assert "no-weak-assert" not in _run_sg(f)
 
 
+@needs_sg
+class TestAssertionlessTestRule:
+    def test_no_check_at_all_fails(self, tmp_path):
+        f = _make_file(tmp_path, "def test_a():\n    result = compute(2)\n")
+        assert "no-assertionless-test" in _run_sg(f)
+
+    def test_must_not_raise_comment_fails(self, tmp_path):
+        """'Must not raise' is still an implicit check; make it explicit."""
+        f = _make_file(
+            tmp_path, "def test_a():\n    json.loads(text)  # must not raise\n"
+        )
+        assert "no-assertionless-test" in _run_sg(f)
+
+    def test_method_without_check_fails(self, tmp_path):
+        f = _make_file(
+            tmp_path, "class TestThing:\n    def test_a(self):\n        compute(2)\n"
+        )
+        assert "no-assertionless-test" in _run_sg(f)
+
+    def test_async_test_without_check_fails(self, tmp_path):
+        f = _make_file(tmp_path, "async def test_a():\n    await compute(2)\n")
+        assert "no-assertionless-test" in _run_sg(f)
+
+    def test_weak_assert_passes(self, tmp_path):
+        """Weak assertions are no-weak-assert's business, not this rule's."""
+        f = _make_file(tmp_path, "def test_a():\n    assert value\n")
+        assert "no-assertionless-test" not in _run_sg(f)
+
+    def test_assert_inside_a_block_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "def test_a():\n    for x in xs:\n        assert f(x) == 1\n",
+        )
+        assert "no-assertionless-test" not in _run_sg(f)
+
+    def test_pytest_raises_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "def test_a():\n    with pytest.raises(ValueError):\n        parse('x')\n",
+        )
+        assert "no-assertionless-test" not in _run_sg(f)
+
+    def test_pytest_warns_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "def test_a():\n    with pytest.warns(UserWarning):\n        legacy()\n",
+        )
+        assert "no-assertionless-test" not in _run_sg(f)
+
+    def test_pytest_fail_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "def test_a():\n    if broken():\n        pytest.fail('broken')\n",
+        )
+        assert "no-assertionless-test" not in _run_sg(f)
+
+    def test_mock_assert_call_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "def test_a(sender):\n    notify(sender)\n"
+            "    sender.send.assert_called_once_with('hi')\n",
+        )
+        assert "no-assertionless-test" not in _run_sg(f)
+
+    def test_unittest_assert_method_passes(self, tmp_path):
+        f = _make_file(
+            tmp_path,
+            "class TestThing(unittest.TestCase):\n"
+            "    def test_a(self):\n        self.assertEqual(f(), 1)\n",
+        )
+        assert "no-assertionless-test" not in _run_sg(f)
+
+    def test_non_test_function_passes(self, tmp_path):
+        f = _make_file(tmp_path, "def build_fixture():\n    return compute(2)\n")
+        assert "no-assertionless-test" not in _run_sg(f)
+
+
 # ---------------------------------------------------------------------------
 # Vacuous test rule — flags test_* functions with no value-comparison assertion
-# (rule lives in rules/disabled/ and is skipped until re-enabled)
+# (rule lives in disabled-rules/, outside the scanned rules/ tree; these tests
+# load it directly by path)
 # ---------------------------------------------------------------------------
 
-_DISABLED_SGCONFIG = os.path.join(_PKG_DIR, "rules", "disabled", "sgconfig.yml")
-
-_VACUOUS_SGCONFIG = os.path.join(_PKG_DIR, "rules", "disabled")
+_VACUOUS_RULE = os.path.join(_PKG_DIR, "disabled-rules", "test-vacuous.yml")
 
 
 def _run_sg_disabled(filepath):
     """Run ast-grep against the disabled rules directory."""
     sg = _sg_binary()
-    rule = os.path.join(_PKG_DIR, "rules", "disabled", "test-vacuous.yml")
-    if not os.path.exists(rule):
-        return []
     result = subprocess.run(
-        [sg, "scan", "--json", "--rule", rule, filepath],
+        [sg, "scan", "--json", "--rule", _VACUOUS_RULE, filepath],
         capture_output=True,
         text=True,
         timeout=30,
@@ -810,14 +883,7 @@ def _run_sg_disabled(filepath):
     return [e.get("ruleId", "unknown") for e in entries]
 
 
-needs_vacuous = pytest.mark.skipif(
-    not os.path.exists(os.path.join(_PKG_DIR, "rules", "disabled", "test-vacuous.yml")),
-    reason="test-vacuous rule is disabled (move to rules/ to enable)",
-)
-
-
 @needs_sg
-@needs_vacuous
 class TestVacuousTestRule:
 
     def test_only_assert_in_fails(self, tmp_path):

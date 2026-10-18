@@ -5,11 +5,11 @@ fileignoreconfig:
 - filename: python_fp_lint/rules/no-subscript-tuple-mutation.yml
   checksum: bc4e007df83db563ef5b3ede3cf3a628d8262855b51a0bdd9d792c1ff4e91eb8
 - filename: python_fp_lint/lint_gate.py
-  checksum: 451890c6cadc857fd43dd22b7a76914389d13cadc43a154679f20ad96058dba7
+  checksum: 0f24939a5ae6d7fa39f4bc6d8103c9a563bed1559c41d0c4c7ae36d848645112
 - filename: tests/test_lint_gate.py
   checksum: 9f467ff33170c9e4808a7ed69ad5db20fff6bf7f659b24edd0053b445476e643
 - filename: tests/test_ast_grep_rules.py
-  checksum: 9ea60f5d547132ec3879aedfeb2e2ce58b5ee0a18a109ee51d5aab604fa014d7
+  checksum: ae43d558ca6b471c1f0e8b084064b60010e4ecd96350c5aa2469743f8ae62189
 - filename: tests/test_cli.py
   checksum: 989e567d0302fafc30d4e1eaeb4288808e23eac3
 - filename: python_fp_lint/__main__.py
@@ -21,7 +21,7 @@ fileignoreconfig:
 - filename: hooks/lint-check.sh
   checksum: a5dbbcc8a010e74e802d1cfcfb628c52b9493107868829309856d5cfe2e5c5ce
 - filename: tests/test_backends.py
-  checksum: baec8052e9b9d9e78860c35b8fc0af0fc187c2466c9113c19d37087865d1144a
+  checksum: 8724102d01531297158bb96eab3068dcd6868f4083e9e9dcb9a94b248aac1088
 - filename: python_fp_lint/precommit.py
   checksum: f29eb1359e8861cc6a6b59b85532d3398aff6d83d4e3eb5ec27a953e8993fe12
 - filename: tests/test_config.py
@@ -31,7 +31,7 @@ fileignoreconfig:
 - filename: tests/test_exclude.py
   checksum: a6a8584250bdc1a1f95c4c2ca788b007a608e48102664037108b0b913c4d7b1e
 - filename: README.md
-  checksum: 4efb3cb455a967cf99c4639ef90f407cab07235b22b97b84440ffc1001e1e5cc
+  checksum: 275f0ea5123f96e951b8115903b821413c14564e560e44d51835833a6c8b17ad
 - filename: tests/test_max_complexity.py
   checksum: 7a10002a1f49e0636d3735121964f16195e8b8dcaa6d1523b2d6dba998f3cf81
 - filename: tests/test_max_statements.py
@@ -42,4 +42,10 @@ fileignoreconfig:
   checksum: d95adcdcea071b5df2ac4baf09e0e456c492bc22bf00c65e5b0bc8049317aebd
 - filename: tests/test_fixture_isolation.py
   checksum: 560e8d303b24fbb201d38897cece323b50a483ef3811ddb7d26d6dfa40174eb9
+- filename: CONTRIBUTING.md
+  checksum: c69986a4c5d6b3e4fe8f60a030d3c1a8533bd3ce6fc6d40af143e824232a1133
+- filename: tests/test_rule_inventory.py
+  checksum: 57228e56ebd1cb5dbe9cbb1ab55c67fdd403c8124a8659940f8000ee9ac986b0
+- filename: tests/test_max_positional_args.py
+  checksum: 648107dcc051e09b4aea7b922c94ec9dffda6bf9bdfba0de39264d316c5203f7
 version: "1.0"

@@ -105,7 +105,12 @@ class TestJSONOutput:
 
     def test_json_output_is_valid_json(self, dirty_file):
         result = _run_bare("--format", "json", "check", dirty_file)
-        json.loads(result.stdout)  # must not raise
+        data = json.loads(result.stdout)
+        assert data["passed"] is False
+        assert data["violation_count"] == 1
+        assert [(v["rule"], v["line"]) for v in data["violations"]] == [
+            ("no-subscript-mutation", 2)
+        ]
 
 
 class TestDirectoryAndGlob:
@@ -326,6 +331,7 @@ class TestBaselineRefusesToGuess:
             self.exclude = None
             self.max_complexity = None
             self.max_statements = None
+            self.max_positional_args = None
             self.strict = False
 
     def test_update_exits_two_without_writing(self, tmp_path, monkeypatch):
@@ -626,7 +632,7 @@ class TestPrecommitRatchet:
         assert len(data["violations"]) == 2
 
 
-class TestSchemaCommand:
+class TestRatchetSchema:
     def _schema(self):
         result = subprocess.run(
             [sys.executable, "-m", "python_fp_lint", "schema"],
@@ -759,6 +765,7 @@ class TestPrecommitWithoutBaselineIsUnchanged:
             exclude = None
             max_complexity = None
             max_statements = None
+            max_positional_args = None
             strict = True
             files = []
             no_tighten = False

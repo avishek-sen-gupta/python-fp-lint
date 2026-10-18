@@ -2,8 +2,8 @@
 """The ratchet's baseline file: one whole-repo violation total.
 
 Deliberately just `{"total": N}`. No fingerprint of the ruleset is recorded,
-so changing `max_complexity`, `max_statements`, `ruff_select`, `ast_grep_rules`
-or a rule file moves the total for reasons unrelated to the code. Re-run
+so changing `max_complexity`, `max_statements`, `max_positional_args`,
+`ruff_select`, `ast_grep_rules` or a rule file moves the total for reasons unrelated to the code. Re-run
 `baseline update` after any such change.
 """
 

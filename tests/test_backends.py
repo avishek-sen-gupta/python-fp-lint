@@ -85,15 +85,18 @@ class TestEnforceStrict:
         assert exc.value.code == 2
         assert "ast-grep" in capsys.readouterr().err
 
-    def test_silent_when_nothing_missing(self, monkeypatch):
+    def test_silent_when_nothing_missing(self, monkeypatch, capsys):
         monkeypatch.setattr("python_fp_lint.__main__.missing_backends", lambda: [])
-        _enforce_strict(_Args(strict=True))  # must not raise
+        _enforce_strict(_Args(strict=True))
+        assert capsys.readouterr() == ("", "")
 
-    def test_no_check_without_strict_flag(self, monkeypatch):
+    def test_no_check_without_strict_flag(self, monkeypatch, capsys):
+        """A missing backend goes unreported unless --strict asks for it."""
         monkeypatch.setattr(
             "python_fp_lint.__main__.missing_backends", lambda: ["ruff"]
         )
-        _enforce_strict(_Args(strict=False))  # must not raise
+        _enforce_strict(_Args(strict=False))
+        assert capsys.readouterr() == ("", "")
 
 
 class TestPreCommitHooksManifest:

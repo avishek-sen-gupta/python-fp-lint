@@ -16,7 +16,7 @@ from python_fp_lint.reassignment_gate import ReassignmentGate
 from python_fp_lint.result import LintResult, LintViolation
 
 # Ruff rule selection — batteries-included + FP-specific
-_DEFAULT_RUFF_SELECT = "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,PLR0915,ANN401"
+_DEFAULT_RUFF_SELECT = "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,PLR0915,PLR0917,ANN401"
 _DEFAULT_RUFF_IGNORE = "E501,W292"
 # Ruff's C901 ceiling. Deliberately stricter than Ruff's own default of 10:
 # a function past three branches is asking to be decomposed.
@@ -24,6 +24,10 @@ _DEFAULT_MAX_COMPLEXITY = 3
 # Ruff's PLR0915 ceiling, counted in statements rather than physical lines.
 # Deliberately stricter than Ruff's own default of 50.
 _DEFAULT_MAX_STATEMENTS = 10
+# Ruff's PLR0917 ceiling. Keyword-only parameters, *args/**kwargs and a
+# method's self/cls are not counted. Deliberately stricter than Ruff's own
+# default of 5.
+_DEFAULT_MAX_POSITIONAL_ARGS = 4
 
 # Paths per subprocess invocation. A whole-repo scan on a large codebase
 # otherwise exceeds ARG_MAX; chunking also bounds each call's work, which is
@@ -49,6 +53,7 @@ class LintGate:
         exclude: list[str] | None = None,
         max_complexity: int | None = None,
         max_statements: int | None = None,
+        max_positional_args: int | None = None,
         baseline: str | None = None,
     ):
         self.rules_dir = rules_dir
@@ -59,6 +64,7 @@ class LintGate:
         self.exclude = exclude
         self.max_complexity = max_complexity
         self.max_statements = max_statements
+        self.max_positional_args = max_positional_args
         self.baseline = baseline
 
     def _config(self, key):
@@ -166,6 +172,15 @@ class LintGate:
             return _DEFAULT_MAX_STATEMENTS
         return _validate_ceiling("max_statements", config_val)
 
+    def _resolve_max_positional_args(self) -> int:
+        """Positional-parameter ceiling in force: constructor > config file > default."""
+        if self.max_positional_args is not None:
+            return _validate_ceiling("max_positional_args", self.max_positional_args)
+        config_val = self._config("max_positional_args")
+        if config_val is None:
+            return _DEFAULT_MAX_POSITIONAL_ARGS
+        return _validate_ceiling("max_positional_args", config_val)
+
     def _run_ruff(self, files: list[str]) -> list[LintViolation]:
         ruff = _find_ruff()
         if ruff is None:
@@ -176,6 +191,7 @@ class LintGate:
             self._resolve_ruff_select(),
             self._resolve_max_complexity(),
             max_statements=self._resolve_max_statements(),
+            max_positional_args=self._resolve_max_positional_args(),
         )
 
     def _run_reassignment(
@@ -521,6 +537,7 @@ def _run_ruff_once(
     select: str,
     max_complexity: int,
     max_statements: int = _DEFAULT_MAX_STATEMENTS,
+    max_positional_args: int = _DEFAULT_MAX_POSITIONAL_ARGS,
 ) -> list[LintViolation]:
     try:
         result = subprocess.run(
@@ -540,6 +557,8 @@ def _run_ruff_once(
                 f"lint.mccabe.max-complexity={max_complexity}",
                 "--config",
                 f"lint.pylint.max-statements={max_statements}",
+                "--config",
+                f"lint.pylint.max-positional-args={max_positional_args}",
             ]
             + files,
             capture_output=True,
@@ -589,11 +608,17 @@ def _run_ruff(
     select: str,
     max_complexity: int,
     max_statements: int = _DEFAULT_MAX_STATEMENTS,
+    max_positional_args: int = _DEFAULT_MAX_POSITIONAL_ARGS,
 ) -> list[LintViolation]:
     return [
         violation
         for chunk in _chunked(files, _MAX_PATHS_PER_CALL)
         for violation in _run_ruff_once(
-            ruff_path, chunk, select, max_complexity, max_statements
+            ruff_path,
+            chunk,
+            select,
+            max_complexity,
+            max_statements,
+            max_positional_args,
         )
     ]
