@@ -45,3 +45,8 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -x -q
+
+      # The repo's own violation total must not rise above fp-baseline.json.
+      # --no-tighten: CI reports a fall but never rewrites the baseline.
+      - name: Lint ratchet (self)
+        run: uv run python -m python_fp_lint precommit --config fp.json --no-tighten

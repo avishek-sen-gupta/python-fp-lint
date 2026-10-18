@@ -636,8 +636,19 @@ chmod +x .git/hooks/pre-commit
 
 ### This repo's own pre-commit hook
 
-For contributors to python-fp-lint itself, the local hook runs Talisman (secret detection) and
-the terminology guards; the test suite runs in CI rather than at commit. Every hook in it
+For contributors to python-fp-lint itself, the local hook runs Talisman (secret detection),
+the terminology guards, and this repo's own lint gate; the test suite runs in CI rather than at
+commit.
+
+The repo is held to its own rules through the [violation ratchet](#violation-ratchet).
+`fp.json` sets only `baseline`, so every other setting is the gate's built-in default and the
+repo is always judged by the current ruleset. `fp-baseline.json` holds the recorded total. The
+hook runs the working copy's gate (`uv run python -m python_fp_lint`), not a pinned release, so
+a rule change applies to this repo the moment it is made. CI runs the same check with
+`--no-tighten`. A commit that adds a violation is blocked; one that removes violations lowers
+the baseline, stages it and fails once, so re-run the commit. After changing a rule or a
+default ceiling, re-run `uv run python -m python_fp_lint baseline update --config fp.json`
+and commit the new total with the change. Every hook in it
 declares its `stages:` explicitly, because one of them is a `commit-msg` hook -- which is
 exactly the condition that makes an omitted `stages:` double-run.
 

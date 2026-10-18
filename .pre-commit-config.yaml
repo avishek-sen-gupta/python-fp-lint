@@ -34,3 +34,16 @@ repos:
         entry: precommit-scripts/check-commit-msg
         language: script
         stages: [commit-msg]
+      # Dogfooding: this repo held to its own rules, as a ratchet on the
+      # total in fp-baseline.json. Runs the working copy's gate, not a
+      # pinned release, so a rule change applies here the moment it lands.
+      # Ratchet mode lints the whole index, so filenames are not passed.
+      # When the total falls, the hook stages the lowered baseline and
+      # fails this one run; re-run the commit.
+      - id: python-fp-lint
+        name: python-fp-lint (ratchet)
+        entry: uv run python -m python_fp_lint precommit --config fp.json
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
