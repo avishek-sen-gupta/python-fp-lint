@@ -223,10 +223,13 @@ uv run python -m python_fp_lint check --config fp.json --max-positional-args 6 s
 **Python API:**
 
 ```python
-from python_fp_lint import LintGate, LintSettings, Locations
+from python_fp_lint import LintGate, LintSettings, load_settings
 
+# What a config file asks for:
+gate = LintGate(settings=load_settings("fp.json"))
+
+# Or settings built directly; unspecified fields take the built-in defaults:
 gate = LintGate(
-    locations=Locations(config_path="fp.json"),
     settings=LintSettings(
         ruff_select="E,F",
         ast_grep_rules=["no-list-append"],
@@ -234,14 +237,28 @@ gate = LintGate(
         max_complexity=5,
         max_statements=20,
         max_positional_args=6,
-    ),
+    )
 )
 ```
 
-`LintGate` takes two frozen dataclasses, both by keyword. `Locations` says where the gate finds
-its inputs: `config_path`, `rules_dir`, `rules_cache_root` and `baseline`. `LintSettings` says
-what it enforces, and each field set there overrides the same key in the config file. Either
-can be omitted.
+`LintGate` takes one frozen dataclass, `LintSettings`, by keyword, and never reads a file
+itself: every field holds a resolved value. To combine a config file with overrides the way
+the CLI does, build the two layers and resolve them -- the overriding layer wins field by
+field, then the config file, then the default:
+
+```python
+from python_fp_lint.settings import ConfigLayer, layer_from_config_file, resolve_settings
+
+settings = resolve_settings(
+    ConfigLayer(max_statements=20),           # overrides, as the CLI flags would give
+    layer_from_config_file("fp.json"),        # the config file
+    project_root=".",
+)
+```
+
+In a layer, a setting no source supplied is `UNSET`; a resolved `LintSettings` never contains
+it. Config errors -- a missing file, malformed JSON, a negative ceiling -- surface while
+resolving, before any linting.
 
 Omitting a key uses the built-in default: for Ruff, the codes listed under
 [Ruff rules](#ruff-rules-batteries-included--fp-specific); for ast-grep, every rule file in the rules
@@ -426,7 +443,7 @@ Exit codes: `0` = no violations, `1` = violations found.
 ```python
 from python_fp_lint import LintGate, LintResult, LintViolation
 
-# Unified gate, all defaults; see "Configuring rules" for Locations and LintSettings — runs ast-grep + Ruff + beniget
+# Unified gate, all defaults; see "Configuring rules" for LintSettings and load_settings
 result = LintGate().evaluate(["src/app.py"], project_root=".")
 
 for v in result.violations:
@@ -931,9 +948,12 @@ python_fp_lint/
 ├── precommit.py           # Staged-blob linting for the git commit gate
 ├── hook_check.py          # PreToolUse event handling behind `hook-check`
 ├── output.py              # emit() for command output; CLI logging for diagnostics
+├── settings.py            # Config layers (UNSET), the config-file adapter, resolve_settings
+├── reports.py             # Report types: each renders a command's output and exit code
+├── ratchets.py            # Ratchet protocol: NoRatchet (staged check), BaselineRatchet
 ├── ratchet.py             # Whole-index total, verdict and auto-tighten
-├── baseline.py            # The ratchet's baseline file and path resolution
-├── __init__.py            # Public API: LintGate, Locations, LintSettings, LintResult, LintViolation
+├── baseline.py            # The ratchet's baseline file
+├── __init__.py            # Public API: LintGate, LintSettings, load_settings, LintResult, LintViolation
 ├── __main__.py            # CLI entry point (text + JSON output)
 ├── sgconfig.yml           # ast-grep configuration
 ├── rules/                 # 36 ast-grep rule files (.yml)

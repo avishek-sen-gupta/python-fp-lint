@@ -54,7 +54,9 @@ or later, or `PLR0917` silently stops applying.
 
 python-fp-lint is a composable set of lint gates:
 
-- **LintGate** (`python_fp_lint/lint_gate.py`) — runs the ast-grep, Ruff and beniget backends in sequence. Locates binaries, resolves rule files and config, applies the complexity, statement and positional-parameter ceilings, and parses each backend's JSON output into `LintViolation` objects.
+- **LintGate** (`python_fp_lint/lint_gate.py`) — runs the ast-grep, Ruff and beniget backends in sequence on a resolved `LintSettings`. It locates binaries, applies the complexity, statement and positional-parameter ceilings, and parses each backend's JSON output into `LintViolation` objects. It never reads configuration itself.
+- **Settings** (`python_fp_lint/settings.py`) — adapters read each source (the config file, the CLI) into a `ConfigLayer`, where a setting the source did not give is `UNSET`; `resolve_settings` applies CLI > config file > default and returns a complete `LintSettings`. `UNSET` and JSON's `null` stop here.
+- **Ratchets and reports** (`python_fp_lint/ratchets.py`, `reports.py`) — `resolve_ratchet` turns the baseline setting into a `NoRatchet` or a `BaselineRatchet`; both answer `check_commit`, `record` and `show` with a `Report`, which renders the output and carries the exit code. The CLI only emits reports.
 - **ReassignmentGate** (`python_fp_lint/reassignment_gate.py`) — uses beniget's def-use chain analysis to detect variable reassignment within a single scope.
 - **Result types** (`python_fp_lint/result.py`) — `LintResult` and `LintViolation` dataclasses shared by all gates.
 
