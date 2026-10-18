@@ -7,15 +7,15 @@ import shutil
 import subprocess
 import sys
 
-import pytest
-
 from python_fp_lint import lint_gate
 from python_fp_lint.lint_gate import (
-    ConfigError,
     LintGate,
-    LintSettings,
-    Locations,
-    _read_config,
+)
+from python_fp_lint.settings import (
+    ConfigLayer,
+    layer_from_config_file,
+    load_settings,
+    resolve_settings,
 )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -37,45 +37,13 @@ def _write_config(tmp_path, **values):
     return str(path)
 
 
-class TestReadConfig:
-    def test_no_path_means_no_config(self):
-        assert _read_config("ruff_select", None) is None
-
-    def test_reads_named_file(self, tmp_path):
-        path = _write_config(tmp_path, ruff_select="E,F")
-        assert _read_config("ruff_select", path) == "E,F"
-
-    def test_absent_key_is_none(self, tmp_path):
-        path = _write_config(tmp_path, ruff_select="E,F")
-        assert _read_config("ast_grep_rules", path) is None
-
-    def test_missing_file_raises(self, tmp_path):
-        with pytest.raises(ConfigError, match="not found"):
-            _read_config("ruff_select", str(tmp_path / "nope.json"))
-
-    def test_malformed_file_raises(self, tmp_path):
-        path = tmp_path / "bad.json"
-        path.write_text("{not json")
-        with pytest.raises(ConfigError, match="cannot read"):
-            _read_config("ruff_select", str(path))
-
-    def test_no_config_json_is_read_from_the_package_directory(self, tmp_path):
-        """Regression guard: discovery relative to the package is gone.
-
-        A config.json sitting next to the installed package must have no
-        effect -- only the named file counts.
-        """
-        gate = LintGate(locations=Locations(config_path=None))
-        assert gate._config("ruff_select") is None
-
-
 class TestConfigAppliedByGate:
     def test_ruff_select_from_config_narrows_rules(self, tmp_path):
         target = tmp_path / "noisy.py"
         target.write_text("import os\nprint('hi')\n")
         # T20 only: the unused import (F401) must not be reported.
         path = _write_config(tmp_path, ruff_select="T20")
-        result = LintGate(locations=Locations(config_path=path)).evaluate(
+        result = LintGate(settings=load_settings(path)).evaluate(
             [str(target)], str(tmp_path)
         )
         rules = [v.rule for v in result.violations]
@@ -86,7 +54,7 @@ class TestConfigAppliedByGate:
         target = tmp_path / "mut.py"
         target.write_text("xs = []\nxs.append(1)\nd = {}\nd['k'] = 1\n")
         path = _write_config(tmp_path, ast_grep_rules=["no-list-append"])
-        result = LintGate(locations=Locations(config_path=path)).evaluate(
+        result = LintGate(settings=load_settings(path)).evaluate(
             [str(target)], str(tmp_path)
         )
         rules = [v.rule for v in result.violations]
@@ -98,8 +66,9 @@ class TestConfigAppliedByGate:
         target.write_text("import os\nprint('hi')\n")
         path = _write_config(tmp_path, ruff_select="T20")
         gate = LintGate(
-            locations=Locations(config_path=path),
-            settings=LintSettings(ruff_select="F"),
+            settings=resolve_settings(
+                ConfigLayer(ruff_select="F"), layer_from_config_file(path), "."
+            )
         )
         rules = [v.rule for v in gate.evaluate([str(target)], str(tmp_path)).violations]
         assert rules.count("F401") == 1
@@ -158,54 +127,6 @@ class TestConfigRequiredOnCLI:
         assert result.returncode == 0, result.stderr
 
 
-def _captured_config_dir(monkeypatch, gate, project_root):
-    # The method returns whatever _resolve_rules_dir returns, so a fake
-    # that echoes config_dir hands it straight back.
-    monkeypatch.setattr(
-        "python_fp_lint.lint_gate._resolve_rules_dir",
-        lambda _explicit, _root, config_dir=None: config_dir,
-    )
-    return gate._resolve_rules_dir(project_root)
-
-
-class TestRelativeRulesDir:
-    """A relative lint_rules_dir is relative to the config file, not to cwd.
-
-    The packaged rules dir always wins as the first candidate, so these assert
-    on the candidate the gate hands to the resolver.
-    """
-
-    def test_relative_path_is_joined_to_the_config_directory(
-        self, tmp_path, monkeypatch
-    ):
-        cfg_dir = tmp_path / "cfgdir"
-        cfg_dir.mkdir()
-        path = cfg_dir / "fp.json"
-        path.write_text(json.dumps({"lint_rules_dir": "myrules"}))
-        captured = _captured_config_dir(
-            monkeypatch,
-            LintGate(locations=Locations(config_path=str(path))),
-            str(tmp_path),
-        )
-        assert captured == str(cfg_dir / "myrules")
-
-    def test_absolute_path_is_left_alone(self, tmp_path, monkeypatch):
-        path = tmp_path / "fp.json"
-        path.write_text(json.dumps({"lint_rules_dir": "/opt/rules"}))
-        captured = _captured_config_dir(
-            monkeypatch,
-            LintGate(locations=Locations(config_path=str(path))),
-            str(tmp_path),
-        )
-        assert captured == "/opt/rules"
-
-    def test_no_config_yields_no_candidate(self, tmp_path, monkeypatch):
-        captured = _captured_config_dir(
-            monkeypatch, LintGate(locations=Locations(config_path=None)), str(tmp_path)
-        )
-        assert captured is None
-
-
 def _install_rules(dest):
     os.makedirs(os.path.join(dest, "rules"), exist_ok=True)
     with open(os.path.join(dest, "sgconfig.yml"), "w") as f:
@@ -227,12 +148,7 @@ class TestConfiguredRulesDirWins:
     def test_config_rules_dir_beats_package_copy(self, tmp_path):
         rules = _install_rules(str(tmp_path / ".python-fp-lint"))
         path = _write_config(tmp_path, lint_rules_dir=".python-fp-lint")
-        assert (
-            LintGate(locations=Locations(config_path=path))._resolve_rules_dir(
-                str(tmp_path)
-            )
-            == rules
-        )
+        assert load_settings(path, str(tmp_path)).rules_dir == rules
 
     def test_configured_dir_is_scanned_in_place(self, tmp_path, monkeypatch):
         """No copy to a cache: the consumer put the rules where they want them."""
@@ -243,7 +159,7 @@ class TestConfiguredRulesDirWins:
         target = tmp_path / "m.py"
         target.write_text("xs = []\nxs.append(1)\n")
 
-        result = LintGate(locations=Locations(config_path=path)).evaluate(
+        result = LintGate(settings=load_settings(path)).evaluate(
             [str(target)], str(tmp_path)
         )
 
@@ -258,7 +174,7 @@ class TestConfiguredRulesDirWins:
         target.write_text("xs = []\nxs.append(1)\n")
         os.unlink(os.path.join(rules, "rules", "no-list-append.yml"))
 
-        result = LintGate(locations=Locations(config_path=path)).evaluate(
+        result = LintGate(settings=load_settings(path)).evaluate(
             [str(target)], str(tmp_path)
         )
 

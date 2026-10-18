@@ -10,7 +10,13 @@ import pytest
 from gitenv import clean_env
 
 from python_fp_lint.hook_check import check_tool_event
-from python_fp_lint.lint_gate import LintGate, LintSettings, Locations, is_excluded
+from python_fp_lint.lint_gate import LintGate, is_excluded
+from python_fp_lint.settings import (
+    ConfigLayer,
+    layer_from_config_file,
+    load_settings,
+    resolve_settings,
+)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 
@@ -78,7 +84,7 @@ class TestExcludeFromConfig:
     def test_excluded_file_produces_no_violations(self, tmp_path):
         target = _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path, exclude=["generated/"])
-        result = LintGate(locations=Locations(config_path=path)).evaluate(
+        result = LintGate(settings=load_settings(path)).evaluate(
             [target], str(tmp_path)
         )
         assert result.passed is True
@@ -88,7 +94,7 @@ class TestExcludeFromConfig:
         excluded = _dirty(tmp_path, "generated/api.py")
         kept = _dirty(tmp_path, "src/app.py")
         path = _write_config(tmp_path, exclude=["generated/"])
-        result = LintGate(locations=Locations(config_path=path)).evaluate(
+        result = LintGate(settings=load_settings(path)).evaluate(
             [excluded, kept], str(tmp_path)
         )
         assert result.passed is False
@@ -100,7 +106,7 @@ class TestExcludeFromConfig:
         target = _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path)
         assert (
-            not LintGate(locations=Locations(config_path=path))
+            not LintGate(settings=load_settings(path))
             .evaluate([target], str(tmp_path))
             .passed
         )
@@ -109,7 +115,7 @@ class TestExcludeFromConfig:
         _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path, exclude=["generated/"])
         assert (
-            LintGate(locations=Locations(config_path=path))
+            LintGate(settings=load_settings(path))
             .evaluate([str(tmp_path)], str(tmp_path))
             .passed
         )
@@ -118,8 +124,9 @@ class TestExcludeFromConfig:
         target = _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path, exclude=["generated/"])
         gate = LintGate(
-            locations=Locations(config_path=path),
-            settings=LintSettings(exclude=["vendor/"]),
+            settings=resolve_settings(
+                ConfigLayer(exclude=["vendor/"]), layer_from_config_file(path), "."
+            )
         )
         assert gate.evaluate([target], str(tmp_path)).passed is False
 
@@ -129,15 +136,17 @@ class TestExcludeFromConfig:
         target = _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path, exclude=["generated/"])
         gate = LintGate(
-            locations=Locations(config_path=path), settings=LintSettings(exclude=())
+            settings=resolve_settings(
+                ConfigLayer(exclude=()), layer_from_config_file(path), "."
+            )
         )
         assert gate.evaluate([target], str(tmp_path)).passed is True
 
     def test_empty_everywhere_excludes_nothing(self, tmp_path):
         target = _dirty(tmp_path, "generated/api.py")
         path = _write_config(tmp_path, exclude=[])
-        gate = LintGate(locations=Locations(config_path=path))
-        assert gate.resolve_exclude() == []
+        gate = LintGate(settings=load_settings(path))
+        assert gate.settings.exclude == ()
         assert gate.evaluate([target], str(tmp_path)).passed is False
 
 

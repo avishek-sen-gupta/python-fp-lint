@@ -18,13 +18,19 @@ from python_fp_lint.lint_gate import (
     BackendError,
     ConfigError,
     LintGate,
-    LintSettings,
-    Locations,
+    _validate_ceiling,
     missing_backends,
 )
 from python_fp_lint.output import configure_cli_logging, emit
 from python_fp_lint.precommit import evaluate_staged, staged_python_files
 from python_fp_lint.rules_meta import list_rules
+from python_fp_lint.settings import (
+    UNSET,
+    ConfigLayer,
+    Unset,
+    layer_from_config_file,
+    resolve_settings,
+)
 
 # Not __name__: run as `python -m python_fp_lint` that is "__main__", outside
 # the package logger configure_cli_logging() sets up. Configured at import,
@@ -39,26 +45,43 @@ def _split_list(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _cli_layer(args) -> ConfigLayer:
+    """The command line as a settings layer. A flag the user did not pass is
+    absent from `args` (argparse.SUPPRESS), so it reads as UNSET here."""
+    return ConfigLayer(
+        ruff_select=getattr(args, "ruff_select", "") or UNSET,
+        ast_grep_rules=tuple(_split_list(getattr(args, "ast_grep_rules", ""))),
+        exclude=tuple(_split_list(getattr(args, "exclude", ""))),
+        max_complexity=_cli_ceiling(args, "max_complexity"),
+        max_statements=_cli_ceiling(args, "max_statements"),
+        max_positional_args=_cli_ceiling(args, "max_positional_args"),
+        baseline=getattr(args, "baseline", UNSET),
+    )
+
+
+def _cli_ceiling(args, name: str) -> int | Unset:
+    value = getattr(args, name, UNSET)
+    return UNSET if value is UNSET else _validate_ceiling(name, value)
+
+
 def _build_gate(args) -> LintGate:
     return LintGate(
-        locations=Locations(
-            config_path=args.config or None, baseline=getattr(args, "baseline", None)
-        ),
-        settings=LintSettings(
-            ruff_select=args.ruff_select or None,
-            ast_grep_rules=_split_list(args.ast_grep_rules),
-            exclude=_split_list(getattr(args, "exclude", "")),
-            max_complexity=getattr(args, "max_complexity", None),
-            max_statements=getattr(args, "max_statements", None),
-            max_positional_args=getattr(args, "max_positional_args", None),
-        ),
+        settings=resolve_settings(
+            _cli_layer(args), layer_from_config_file(args.config), "."
+        )
     )
+
+
+def _baseline_path(args) -> str | Unset:
+    """The baseline in force: the command line's, else the config file's."""
+    cli = _cli_layer(args).baseline
+    return cli if cli is not UNSET else layer_from_config_file(args.config).baseline
 
 
 def _resolve_baseline_or_exit(args) -> str:
     """The baseline path in force, or exit 2 -- these commands require one."""
-    path = _build_gate(args).resolve_baseline()
-    if path is None:
+    path = _baseline_path(args)
+    if path is UNSET:
         log.error(
             "error: no baseline configured; pass --baseline PATH or set "
             '"baseline" in the config file'
@@ -277,15 +300,15 @@ def _fall_text(verdict) -> list[str]:
 
 
 def _run_precommit(args):
-    # Must run before anything reads --config: resolve_baseline() eagerly opens
-    # and parses the config file, which would reorder the two failure modes
+    # Must run before anything reads --config: building the gate opens and
+    # parses the config file, which would reorder the two failure modes
     # for `--strict` with both a missing backend and a bad --config, breaking
     # the no-baseline path's "byte-for-byte unchanged" guarantee.
     _enforce_strict(args)
     repo_root = _git_repo_root()
     gate = _build_gate(args)
-    baseline_path = gate.resolve_baseline()
-    if baseline_path is None:
+    baseline_path = _baseline_path(args)
+    if baseline_path is UNSET:
         _run_precommit_staged(args, gate, repo_root)
     else:
         _run_precommit_ratchet(args, gate, repo_root, baseline_path)
@@ -459,7 +482,7 @@ def _run_schema(_args):
 def _add_rule_flags(p):
     p.add_argument(
         "--ruff-select",
-        default=None,
+        default=argparse.SUPPRESS,
         help="Comma-separated Ruff rule codes (overrides config.json and default)",
     )
     p.add_argument(
@@ -478,7 +501,7 @@ def _add_rule_flags(p):
     p.add_argument(
         "--max-complexity",
         type=int,
-        default=None,
+        default=argparse.SUPPRESS,
         metavar="N",
         help=(
             "Maximum cyclomatic complexity per function, reported as Ruff "
@@ -488,7 +511,7 @@ def _add_rule_flags(p):
     p.add_argument(
         "--max-statements",
         type=int,
-        default=None,
+        default=argparse.SUPPRESS,
         metavar="N",
         help=(
             "Maximum statements per function, reported as Ruff PLR0915 "
@@ -498,7 +521,7 @@ def _add_rule_flags(p):
     p.add_argument(
         "--max-positional-args",
         type=int,
-        default=None,
+        default=argparse.SUPPRESS,
         metavar="N",
         help=(
             "Maximum positional parameters per function, reported as Ruff "
@@ -527,7 +550,7 @@ def _add_baseline_flag(p):
     """
     p.add_argument(
         "--baseline",
-        default=None,
+        default=argparse.SUPPRESS,
         metavar="PATH",
         help=(
             "Path to the ratchet baseline file "

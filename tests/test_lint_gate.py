@@ -13,8 +13,14 @@ from gitenv import clean_env
 
 import python_fp_lint
 from python_fp_lint import lint_gate
-from python_fp_lint.lint_gate import LintGate, LintSettings, Locations
+from python_fp_lint.lint_gate import LintGate, LintSettings
 from python_fp_lint.result import LintResult
+from python_fp_lint.settings import (
+    ConfigLayer,
+    layer_from_config_file,
+    load_settings,
+    resolve_settings,
+)
 
 
 def _make_file(tmp_path, filename, content):
@@ -49,30 +55,6 @@ needs_ruff = pytest.mark.skipif(
     shutil.which("ruff") is None,
     reason="ruff not installed",
 )
-
-
-# ===========================================================================
-# Rules directory resolution
-# ===========================================================================
-
-
-class TestResolveRulesDir:
-    def test_explicit_rules_dir_takes_priority(self, tmp_path):
-        gate = LintGate(locations=Locations(rules_dir="/explicit/path"))
-        assert gate._resolve_rules_dir(str(tmp_path)) == "/explicit/path"
-
-    def test_package_local_finds_rules(self, tmp_path):
-        gate = LintGate()
-        # No config and no scripts/lint/ under tmp_path: the package copy.
-        assert gate._resolve_rules_dir(str(tmp_path)) == lint_gate._package_rules_dir()
-
-
-# ===========================================================================
-# Rules-dir materialization (ast-grep ignores rule files under a gitignored
-# path, e.g. a consumer's own .venv where this package is normally
-# installed -- regardless of --no-ignore flags). Rules must be copied to a
-# stable location outside any consumer's git tree before scanning.
-# ===========================================================================
 
 
 class TestMaterializeRulesDir:
@@ -175,7 +157,7 @@ class TestAstGrepIgnoresGitignoredRulesDir:
         # copies out of, and the only one it copies. A rules dir the consumer
         # named themselves is scanned where it stands.
         monkeypatch.setattr(lint_gate, "_package_rules_dir", lambda: str(rules_src))
-        gate = LintGate(locations=Locations(rules_cache_root=str(tmp_path / "cache")))
+        gate = LintGate(settings=LintSettings(rules_cache_root=str(tmp_path / "cache")))
         result = gate.evaluate([str(target)], str(repo))
 
         assert [v.rule for v in result.violations].count("no-list-append") == 1
@@ -190,60 +172,44 @@ class TestLintGateAPI:
     def test_returns_lint_result(self, tmp_path, rules_dir, monkeypatch):
         monkeypatch.setattr(shutil, "which", lambda cmd: None)
         path = _make_file(tmp_path, "widget.py", "x = 1\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert type(result) is LintResult
 
     def test_no_python_files_passes(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "README.md", "# Hello")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert result.passed is True
         assert result.violations == []
 
     def test_empty_files_passes(self, tmp_path, rules_dir):
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([], str(tmp_path))
         assert result.passed is True
 
 
-class TestConstructorGroups:
-    """LintGate takes two groups, by name: where things are, and what to enforce."""
+class TestConstructor:
+    """LintGate takes resolved settings, by name, and nothing else."""
 
-    def test_groups_are_keyword_only(self):
+    def test_settings_are_keyword_only(self):
         with pytest.raises(TypeError):
-            LintGate(Locations())
+            LintGate(LintSettings())
 
     def test_flat_settings_are_rejected(self):
         with pytest.raises(TypeError):
             LintGate(config_path="fp.json")
 
-    @pytest.mark.parametrize("group", [Locations(), LintSettings()])
-    def test_groups_are_frozen(self, group):
-        field = next(iter(group.__dataclass_fields__))
+    def test_settings_are_frozen(self):
         with pytest.raises(dataclasses.FrozenInstanceError):
-            setattr(group, field, "changed")
+            LintSettings().max_statements = 1
 
-    def test_no_arguments_means_empty_groups(self):
-        gate = LintGate()
-        assert (gate.locations, gate.settings) == (Locations(), LintSettings())
+    def test_no_arguments_means_default_settings(self):
+        assert LintGate().settings == LintSettings()
 
-    def test_settings_reach_the_resolvers(self):
-        gate = LintGate(settings=LintSettings(max_statements=7, ruff_select="E"))
-        assert (gate._resolve_max_statements(), gate._resolve_ruff_select()) == (
-            7,
-            "E",
-        )
-
-    def test_config_location_is_read(self, tmp_path):
-        config = tmp_path / "fp.json"
-        config.write_text('{"max_complexity": 6}')
-        gate = LintGate(locations=Locations(config_path=str(config)))
-        assert gate._resolve_max_complexity() == 6
-
-    def test_groups_are_exported_from_the_package(self):
-        assert (python_fp_lint.Locations, python_fp_lint.LintSettings) == (
-            Locations,
+    def test_load_settings_is_exported_from_the_package(self):
+        assert (python_fp_lint.load_settings, python_fp_lint.LintSettings) == (
+            load_settings,
             LintSettings,
         )
 
@@ -344,7 +310,7 @@ class TestLintGateWithoutTools:
         """When sg is missing, ast-grep violations are empty but gate still runs."""
         monkeypatch.setattr(shutil, "which", lambda cmd: None)
         path = _make_file(tmp_path, "widget.py", "x = 1\nx = 2\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         # Reassignment should still be detected even without sg
         assert [v.rule for v in result.violations].count("reassignment") == 1
@@ -359,7 +325,7 @@ class TestLintGateWithoutTools:
 class TestLintGateAstGrep:
     def test_clean_file_passes_ast_grep(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "def compute():\n    return 42\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         # May have Ruff violations if ruff installed, so just check ast-grep rules
         ast_grep_violations = [v for v in result.violations if not v.rule[0].isupper()]
@@ -367,13 +333,13 @@ class TestLintGateAstGrep:
 
     def test_list_append_detected(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "items = []\nitems.append(1)\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("no-list-append") == 1
 
     def test_subscript_mutation_detected(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "d = {}\nd['key'] = 'val'\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("no-subscript-mutation") == 1
 
@@ -386,7 +352,7 @@ class TestLintGateAstGrep:
             "        for cell in row:\n"
             "            process(cell)\n",
         )
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("no-deep-nesting") == 1
 
@@ -400,13 +366,13 @@ class TestLintGateAstGrep:
             "        result.append(x)\n"
             "    return result\n",
         )
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("no-loop-mutation") == 1
 
     def test_deduplicates_files(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "x = 1\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path, path, path], str(tmp_path))
         # Clean file with deduplication — no ast-grep violations
         ast_grep_violations = [v for v in result.violations if not v.rule[0].isupper()]
@@ -415,7 +381,7 @@ class TestLintGateAstGrep:
     def test_only_scans_touched_files(self, tmp_path, rules_dir):
         _make_file(tmp_path, "dirty.py", "items = []\nitems.append(1)\n")
         clean = _make_file(tmp_path, "clean.py", "x = 1\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([clean], str(tmp_path))
         ast_grep_violations = [v for v in result.violations if not v.rule[0].isupper()]
         assert ast_grep_violations == []
@@ -430,26 +396,26 @@ class TestLintGateAstGrep:
 class TestLintGateRuff:
     def test_bare_except_detected_via_ruff(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "try:\n    x = 1\nexcept:\n    pass\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("E722") == 1
 
     def test_print_detected_via_ruff(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "print('hello')\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("T201") == 1
 
     def test_undefined_name_detected_via_ruff(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "x = undefined_variable\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         # F821 is undefined name, which is in the F category
         assert [v.rule for v in result.violations].count("F821") == 1
 
     def test_unused_import_detected(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "import os\nx = 1\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("F401") == 1
 
@@ -462,7 +428,7 @@ class TestLintGateRuff:
             lambda cmd: None if cmd == "ruff" else original_which(cmd),
         )
         path = _make_file(tmp_path, "widget.py", "print('hello')\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         # No Ruff violations since binary is missing
         ruff_violations = [v for v in result.violations if v.rule[0].isupper()]
@@ -480,14 +446,14 @@ class TestLintGateReassignment:
         # Mock sg and ruff away to isolate reassignment
         monkeypatch.setattr(shutil, "which", lambda cmd: None)
         path = _make_file(tmp_path, "widget.py", "x = 1\nx = 2\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("reassignment") == 1
 
     def test_no_reassignment_passes(self, tmp_path, rules_dir, monkeypatch):
         monkeypatch.setattr(shutil, "which", lambda cmd: None)
         path = _make_file(tmp_path, "widget.py", "x = 1\ny = 2\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("reassignment") == 0
 
@@ -510,7 +476,7 @@ class TestUnifiedGateIntegration:
             "items.append(1)\n"  # no-list-append (ast-grep)
         )
         path = _make_file(tmp_path, "widget.py", code)
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert result.passed is False
         rules_hit = [v.rule for v in result.violations]
@@ -521,7 +487,7 @@ class TestUnifiedGateIntegration:
 
     def test_clean_file_passes_all_backends(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "def compute():\n    return 42\n")
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir))
         result = gate.evaluate([path], str(tmp_path))
         assert result.passed is True
 
@@ -532,38 +498,38 @@ class TestUnifiedGateIntegration:
 
 
 @needs_ruff
+def _gate_from(tmp_path, rules_dir, config, **cli):
+    """A gate resolved as the CLI resolves one: a real config file, plus
+    command-line values that outrank it."""
+    path = tmp_path / "fp.json"
+    path.write_text(json.dumps(config))
+    return LintGate(
+        settings=resolve_settings(
+            ConfigLayer(rules_dir=rules_dir, **cli),
+            layer_from_config_file(str(path)),
+            str(tmp_path),
+        )
+    )
+
+
 class TestRuffSelectConfig:
     def test_constructor_overrides_default(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "import os\nx = 1\n")
         # F401 (unused import) is in default set — restrict to E only
-        gate = LintGate(
-            locations=Locations(rules_dir=rules_dir),
-            settings=LintSettings(ruff_select="E"),
-        )
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir, ruff_select="E"))
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("F401") == 0
 
-    def test_config_overrides_default(self, tmp_path, rules_dir, monkeypatch):
+    def test_config_overrides_default(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "import os\nx = 1\n")
-        monkeypatch.setattr(
-            "python_fp_lint.lint_gate._read_config",
-            lambda key, _path=None: "E" if key == "ruff_select" else None,
-        )
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = _gate_from(tmp_path, rules_dir, {"ruff_select": "E"})
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("F401") == 0
 
-    def test_constructor_overrides_config(self, tmp_path, rules_dir, monkeypatch):
+    def test_constructor_overrides_config(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "import os\nx = 1\n")
-        # config file says E only, constructor says F — F should win
-        monkeypatch.setattr(
-            "python_fp_lint.lint_gate._read_config",
-            lambda key, _path=None: "E" if key == "ruff_select" else None,
-        )
-        gate = LintGate(
-            locations=Locations(rules_dir=rules_dir),
-            settings=LintSettings(ruff_select="F"),
-        )
+        # config file says E only, command line says F — F should win
+        gate = _gate_from(tmp_path, rules_dir, {"ruff_select": "E"}, ruff_select="F")
         result = gate.evaluate([path], str(tmp_path))
         assert [v.rule for v in result.violations].count("F401") == 1
 
@@ -580,8 +546,11 @@ class TestAstGrepRulesConfig:
         config_path.write_text(json.dumps(config))
         path = _make_file(tmp_path, "widget.py", self._CODE)
         gate = LintGate(
-            locations=Locations(rules_dir=rules_dir, config_path=str(config_path)),
-            settings=settings,
+            settings=resolve_settings(
+                ConfigLayer(rules_dir=rules_dir),
+                layer_from_config_file(str(config_path)),
+                ".",
+            )
         )
         return [v.rule for v in gate.evaluate([path], str(tmp_path)).violations]
 
@@ -629,8 +598,9 @@ class TestAstGrepRulesConfig:
         )
         # Only enable no-list-append, not no-subscript-mutation
         gate = LintGate(
-            locations=Locations(rules_dir=rules_dir),
-            settings=LintSettings(ast_grep_rules=["no-list-append"]),
+            settings=LintSettings(
+                rules_dir=rules_dir, ast_grep_rules=["no-list-append"]
+            )
         )
         result = gate.evaluate([path], str(tmp_path))
         ast_grep = [
@@ -641,15 +611,9 @@ class TestAstGrepRulesConfig:
         assert [v.rule for v in ast_grep] == ["no-list-append"]
         assert [v.rule for v in result.violations].count("no-subscript-mutation") == 0
 
-    def test_config_filters_rules(self, tmp_path, rules_dir, monkeypatch):
+    def test_config_filters_rules(self, tmp_path, rules_dir):
         path = _make_file(tmp_path, "widget.py", "items = []\nitems.append(1)\n")
-        monkeypatch.setattr(
-            "python_fp_lint.lint_gate._read_config",
-            lambda key, _path=None: (
-                ["no-list-append"] if key == "ast_grep_rules" else None
-            ),
-        )
-        gate = LintGate(locations=Locations(rules_dir=rules_dir))
+        gate = _gate_from(tmp_path, rules_dir, {"ast_grep_rules": ["no-list-append"]})
         result = gate.evaluate([path], str(tmp_path))
         ast_grep = [
             v
@@ -658,22 +622,18 @@ class TestAstGrepRulesConfig:
         ]
         assert [v.rule for v in ast_grep] == ["no-list-append"]
 
-    def test_constructor_overrides_config(self, tmp_path, rules_dir, monkeypatch):
+    def test_constructor_overrides_config(self, tmp_path, rules_dir):
         path = _make_file(
             tmp_path,
             "widget.py",
             "items = []\nitems.append(1)\nd = {}\nd['k'] = 'v'\n",
         )
-        # config file says no-list-append only, constructor says no-subscript-mutation
-        monkeypatch.setattr(
-            "python_fp_lint.lint_gate._read_config",
-            lambda key, _path=None: (
-                ["no-list-append"] if key == "ast_grep_rules" else None
-            ),
-        )
-        gate = LintGate(
-            locations=Locations(rules_dir=rules_dir),
-            settings=LintSettings(ast_grep_rules=["no-subscript-mutation"]),
+        # config file says no-list-append only, command line says no-subscript-mutation
+        gate = _gate_from(
+            tmp_path,
+            rules_dir,
+            {"ast_grep_rules": ["no-list-append"]},
+            ast_grep_rules=("no-subscript-mutation",),
         )
         result = gate.evaluate([path], str(tmp_path))
         ast_grep = [
@@ -690,10 +650,7 @@ class TestAstGrepRulesConfig:
             "widget.py",
             "items = []\nitems.append(1)\nd = {}\nd['k'] = 'v'\n",
         )
-        gate = LintGate(
-            locations=Locations(rules_dir=rules_dir),
-            settings=LintSettings(ast_grep_rules=None),
-        )
+        gate = LintGate(settings=LintSettings(rules_dir=rules_dir, ast_grep_rules=None))
         result = gate.evaluate([path], str(tmp_path))
         ast_grep_rules = {
             v.rule

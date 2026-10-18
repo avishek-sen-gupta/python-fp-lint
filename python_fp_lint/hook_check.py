@@ -12,9 +12,10 @@ import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 
-from python_fp_lint.lint_gate import LintGate, Locations
+from python_fp_lint.lint_gate import LintGate, LintSettings
 from python_fp_lint.output import Stream, emit
 from python_fp_lint.result import LintViolation
+from python_fp_lint.settings import load_settings
 
 
 def simulate_edit(
@@ -111,7 +112,11 @@ def check_tool_event(
     if outcome_of is None or not file_path.endswith(".py"):
         return 0
 
-    gate = LintGate(locations=Locations(config_path=config_path))
+    # Without a config file, the built-in defaults apply.
+    settings = (
+        load_settings(config_path, os.getcwd()) if config_path else LintSettings()
+    )
+    gate = LintGate(settings=settings)
     # The edit is judged by where the real file lives, not by the temp copy
     # that gets linted.
     if gate.is_excluded(file_path, os.getcwd()):

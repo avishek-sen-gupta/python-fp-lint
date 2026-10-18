@@ -8,7 +8,13 @@ import pytest
 from gitenv import clean_env
 
 from python_fp_lint import baseline, lint_gate, ratchet
-from python_fp_lint.lint_gate import LintGate, LintSettings, Locations
+from python_fp_lint.lint_gate import LintGate
+from python_fp_lint.settings import (
+    ConfigLayer,
+    layer_from_config_file,
+    load_settings,
+    resolve_settings,
+)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 CONFIG = os.path.join(REPO_ROOT, "config.example.json")
@@ -46,7 +52,7 @@ def repo(tmp_path):
 
 
 def _gate():
-    return LintGate(locations=Locations(config_path=CONFIG))
+    return LintGate(settings=load_settings(CONFIG))
 
 
 def _sparse_two_trees(repo):
@@ -172,8 +178,9 @@ class TestTotal:
         (repo / "gen.py").write_text(DIRTY)
         _git(repo, "add", "gen.py")
         gate = LintGate(
-            locations=Locations(config_path=CONFIG),
-            settings=LintSettings(exclude=["gen.py"]),
+            settings=resolve_settings(
+                ConfigLayer(exclude=["gen.py"]), layer_from_config_file(CONFIG), "."
+            )
         )
         assert ratchet.total_violations(str(repo), gate).violations == []
 

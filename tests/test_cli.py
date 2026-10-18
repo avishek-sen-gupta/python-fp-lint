@@ -328,19 +328,6 @@ class TestBaselineRefusesToGuess:
     no amount of PATH manipulation in a child process makes them unreachable.
     """
 
-    class _Args:
-        def __init__(self, config, baseline):
-            self.config = config
-            self.baseline = baseline
-            self.format = "text"
-            self.ruff_select = None
-            self.ast_grep_rules = ""
-            self.exclude = ""
-            self.max_complexity = None
-            self.max_statements = None
-            self.max_positional_args = None
-            self.strict = False
-
     def test_update_exits_two_without_writing(self, tmp_path, monkeypatch):
         from python_fp_lint.__main__ import _run_baseline_update
 
@@ -348,8 +335,11 @@ class TestBaselineRefusesToGuess:
         monkeypatch.setattr(
             "python_fp_lint.__main__.missing_backends", lambda: ["ruff"]
         )
+        args = _build_parser().parse_args(
+            ["baseline", "update", "--config", CONFIG, "--baseline", str(path)]
+        )
         with pytest.raises(SystemExit) as exc:
-            _run_baseline_update(self._Args(CONFIG, str(path)))
+            _run_baseline_update(args)
         assert exc.value.code == 2
         assert path.exists() is False
 
