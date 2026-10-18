@@ -558,7 +558,8 @@ class TestPrecommitRatchet:
                 "-c",
                 "import sys;"
                 "import python_fp_lint.__main__ as m;"
-                "m._MAX_REPORTED_VIOLATIONS = 1;"
+                "import python_fp_lint.reports as reports;"
+                "reports._MAX_REPORTED_VIOLATIONS = 1;"
                 "sys.argv = ['python-fp-lint', 'precommit', '--config', "
                 f"{str(repo / 'fp.json')!r}];"
                 "m.main()",

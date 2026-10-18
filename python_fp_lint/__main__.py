@@ -21,8 +21,9 @@ from python_fp_lint.lint_gate import (
     _validate_ceiling,
     missing_backends,
 )
-from python_fp_lint.output import configure_cli_logging, emit
+from python_fp_lint.output import OutputFormat, configure_cli_logging, emit
 from python_fp_lint.precommit import evaluate_staged, staged_python_files
+from python_fp_lint.reports import CheckReport, RatchetReport
 from python_fp_lint.rules_meta import list_rules
 from python_fp_lint.settings import (
     UNSET,
@@ -139,39 +140,21 @@ def _enforce_strict(args) -> None:
         _require_backends()
 
 
-def _violation_json(v) -> dict:
-    return {"rule": v.rule, "file": v.file, "line": v.line, "message": v.message}
-
-
-def _violation_text(v) -> str:
-    loc = f"{v.file}:{v.line}" if v.line else v.file
-    return f"  [{v.rule}] {loc} — {v.message}"
-
-
-def _check_text(violations) -> str:
-    if not violations:
-        return "No violations found."
-    return "\n".join(
-        [
-            *(_violation_text(v) for v in violations),
-            f"\n{len(violations)} violation(s) found.",
-        ]
-    )
-
-
-def _check_json(result) -> str:
-    payload = {
-        "passed": result.passed,
-        "violation_count": len(result.violations),
-        "violations": [_violation_json(v) for v in result.violations],
-    }
-    return json.dumps(payload, indent=2)
-
-
 def _report(result, fmt: str) -> None:
     """Print a LintResult in the requested format and exit 0/1."""
-    emit(_check_json(result) if fmt == "json" else _check_text(result.violations))
-    sys.exit(0 if result.passed else 1)
+    _emit_report(CheckReport(result), fmt)
+
+
+def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
+    """Print a ratchet verdict and exit 0 (clean or tightened) or 1 (regression)."""
+    _emit_report(RatchetReport(verdict, violations, frozenset(staged)), fmt)
+
+
+def _emit_report(report, fmt: str) -> None:
+    text = report.render(OutputFormat[fmt.upper()])
+    if text:
+        emit(text, report.stream)
+    sys.exit(report.exit_code)
 
 
 def _with_config_errors(run, args):
@@ -204,99 +187,6 @@ def _git_repo_root() -> str:
         log.error("error: not inside a git repository")
         sys.exit(2)
     return result.stdout.strip()
-
-
-_MAX_REPORTED_VIOLATIONS = 50
-
-
-def _reported_violations(violations, staged: set[str]) -> tuple[list, bool]:
-    """The subset of the repo's violations a ratchet report shows.
-
-    Normally the staged files' violations. The raw list runs to thousands of
-    lines on the codebases this feature exists for, and the regression is
-    almost always in what was just touched; `check` still prints everything.
-
-    The condition is whether the filter produced anything, not whether
-    anything is staged. Nothing staged is the CI case, but a staged set that
-    is entirely clean is just as common -- a baseline stale against the index
-    after a pull, a merge or someone else's commit -- and both would otherwise
-    block a commit while naming no violation at all. Whenever there is nothing
-    local to show, the whole list is shown instead, capped, with the caller
-    printing how many were dropped.
-
-    Returns the list and whether it is the local one, which is what decides
-    how the caller words the count of everything it left out.
-    """
-    local = [v for v in violations if v.file in staged]
-    if local:
-        return local, True
-    return list(violations[:_MAX_REPORTED_VIOLATIONS]), False
-
-
-def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
-    """Print a ratchet verdict and exit 0 (clean or tightened) or 1 (regression)."""
-    reported, is_local = _reported_violations(violations, staged)
-    lines = (
-        [_ratchet_json(verdict, violations, reported)]
-        if fmt == "json"
-        else _ratchet_text(verdict, reported, len(violations) - len(reported), is_local)
-    )
-    if lines:
-        emit("\n".join(lines))
-    sys.exit(1 if verdict.regressed else 0)
-
-
-def _ratchet_json(verdict, violations, reported) -> str:
-    payload = {
-        "passed": not verdict.regressed,
-        # The repo-wide total, which is what the ratchet compares; the
-        # length of `violations` below is `reported_violation_count`, and
-        # the two differ whenever the report is filtered or capped.
-        "violation_count": len(violations),
-        "reported_violation_count": len(reported),
-        "ratchet": {
-            "baseline": verdict.recorded,
-            "total": verdict.total,
-            "tightened": verdict.tightened,
-        },
-        "violations": [_violation_json(v) for v in reported],
-    }
-    return json.dumps(payload, indent=2)
-
-
-def _ratchet_text(verdict, reported, remainder: int, is_local: bool) -> list[str]:
-    """The text report's lines; none at all when the total is unchanged."""
-    if verdict.regressed:
-        return [
-            f"ratchet: {verdict.recorded} → {verdict.total} (+{verdict.delta})",
-            *(_violation_text(v) for v in reported),
-            *_remainder_note(remainder, is_local),
-        ]
-    return _fall_text(verdict)
-
-
-def _remainder_note(remainder: int, is_local: bool) -> list[str]:
-    if not remainder:
-        return []
-    if is_local:
-        return [
-            f"\n{remainder} further violation(s) in the rest of the repo, "
-            "in files you did not stage."
-        ]
-    return [f"\n… and {remainder} more (run `check` for the full list)"]
-
-
-def _fall_text(verdict) -> list[str]:
-    if verdict.tightened:
-        return [f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta})"]
-    if verdict.dropped:
-        # --no-tighten: the only way to reach a fall that was not recorded.
-        # Silence here is how a baseline drifts above reality forever.
-        return [
-            f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta}) "
-            "— not tightened (--no-tighten); run `baseline update` to record it"
-        ]
-    return []
 
 
 def _run_precommit(args):

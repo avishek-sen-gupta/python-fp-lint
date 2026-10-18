@@ -19,6 +19,13 @@ class Stream(Enum):
     STDERR = auto()
 
 
+class OutputFormat(Enum):
+    """How a command renders its output: --format text or --format json."""
+
+    TEXT = auto()
+    JSON = auto()
+
+
 def emit(text: str = "", stream: Stream = Stream.STDOUT) -> None:
     """Write one line of command output."""
     target = sys.stdout if stream is Stream.STDOUT else sys.stderr

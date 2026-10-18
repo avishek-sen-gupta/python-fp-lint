@@ -64,4 +64,8 @@ fileignoreconfig:
   checksum: 6c6f06f5eec0a438650deb9e4d26a6cccdc873181a031ec1a569abdb48ef9d10
 - filename: tests/test_settings.py
   checksum: eef7772354da8d85b8f36d52d0e67bf74cb213a63566b48c7d7b09caa366b419
+- filename: python_fp_lint/reports.py
+  checksum: efa693ce868f83ffc0e931ad1f03e4e7d88efb6a2115f1420802165aade66105
+- filename: tests/data/report_snapshots.json
+  checksum: 1e48a22dbdc35e4602651fda9a70c72303362a28c2b024290613ac2372237ad5
 version: "1.0"
