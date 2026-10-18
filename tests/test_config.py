@@ -167,13 +167,13 @@ class TestRelativeRulesDir:
 
     @staticmethod
     def _captured_config_dir(monkeypatch, gate, project_root):
-        seen = []
+        # The method returns whatever _resolve_rules_dir returns, so a fake
+        # that echoes config_dir hands it straight back.
         monkeypatch.setattr(
             "python_fp_lint.lint_gate._resolve_rules_dir",
-            lambda _explicit, _root, config_dir=None: seen.append(config_dir),
+            lambda _explicit, _root, config_dir=None: config_dir,
         )
-        gate._resolve_rules_dir(project_root)
-        return seen[0]
+        return gate._resolve_rules_dir(project_root)
 
     def test_relative_path_is_joined_to_the_config_directory(
         self, tmp_path, monkeypatch
@@ -234,12 +234,11 @@ class TestConfiguredRulesDirWins:
         """No copy to a cache: the consumer put the rules where they want them."""
         rules = self._install_rules(str(tmp_path / ".python-fp-lint"))
         path = _write_config(tmp_path, lint_rules_dir=".python-fp-lint")
-        copied = []
-        monkeypatch.setattr(
-            lint_gate,
-            "_materialize_rules_dir",
-            lambda src, root: copied.append(src) or src,
-        )
+
+        def never_materialized(src, root):
+            raise AssertionError("configured rules dir must not be materialized")
+
+        monkeypatch.setattr(lint_gate, "_materialize_rules_dir", never_materialized)
         target = tmp_path / "m.py"
         target.write_text("xs = []\nxs.append(1)\n")
 
@@ -247,7 +246,6 @@ class TestConfiguredRulesDirWins:
             [str(target)], str(tmp_path)
         )
 
-        assert copied == [], "configured rules dir must not be materialized"
         assert [v.rule for v in result.violations].count("no-list-append") == 1
         assert os.path.isdir(rules) is True
 

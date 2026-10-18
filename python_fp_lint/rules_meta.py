@@ -11,28 +11,32 @@ def _rules_dir() -> str:
 
 
 def _ast_grep_rules() -> list[dict]:
-    rules = []
     rdir = _rules_dir()
     if not os.path.isdir(rdir):
-        return rules
-    for fname in sorted(os.listdir(rdir)):
-        if not fname.endswith(".yml") or fname == "sgconfig.yml":
-            continue
-        path = os.path.join(rdir, fname)
-        try:
-            with open(path) as f:
-                data = yaml.safe_load(f)
-            rules.append(
-                {
-                    "id": data.get("id", fname.removesuffix(".yml")),
-                    "message": data.get("message", ""),
-                    "severity": data.get("severity", "warning"),
-                    "backend": "ast-grep",
-                }
-            )
-        except (yaml.YAMLError, OSError):
-            continue
-    return rules
+        return []
+    return [
+        rule
+        for fname in sorted(os.listdir(rdir))
+        if fname.endswith(".yml") and fname != "sgconfig.yml"
+        for rule in _read_rule(rdir, fname)
+    ]
+
+
+def _read_rule(rdir: str, fname: str) -> list[dict]:
+    """One rule file's metadata, or nothing when the file cannot be read."""
+    try:
+        with open(os.path.join(rdir, fname)) as f:
+            data = yaml.safe_load(f)
+    except (yaml.YAMLError, OSError):
+        return []
+    return [
+        {
+            "id": data.get("id", fname.removesuffix(".yml")),
+            "message": data.get("message", ""),
+            "severity": data.get("severity", "warning"),
+            "backend": "ast-grep",
+        }
+    ]
 
 
 def _ruff_rules() -> list[dict]:
@@ -137,13 +141,13 @@ def _ruff_rules() -> list[dict]:
 
 def list_rules() -> list[dict]:
     """Return metadata for all available lint rules across all backends."""
-    rules = _ast_grep_rules() + _ruff_rules()
-    rules.append(
+    return [
+        *_ast_grep_rules(),
+        *_ruff_rules(),
         {
             "id": "reassignment",
             "message": "Variable reassignment detected — use new bindings instead",
             "severity": "warning",
             "backend": "beniget",
-        }
-    )
-    return rules
+        },
+    ]

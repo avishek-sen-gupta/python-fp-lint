@@ -223,41 +223,35 @@ class TestArgvChunking:
         assert lint_gate._chunked([]) == []
 
     def test_ruff_runs_once_per_chunk_and_concatenates(self, monkeypatch):
-        calls = []
-
         def record(cmd, **_kwargs):
+            # Each chunk reports its own size, so the result shows both the
+            # chunking and the order the chunks were concatenated in.
             paths = [a for a in cmd if a.endswith(".py")]
-            calls.append(len(paths))
             entry = {
                 "code": "F401",
                 "filename": paths[0],
                 "location": {"row": 1},
-                "message": "m",
+                "message": str(len(paths)),
             }
             return _Completed(stdout=json.dumps([entry]))
 
         monkeypatch.setattr(lint_gate.subprocess, "run", record)
         files = [f"f{i}.py" for i in range(2500)]
         violations = lint_gate._run_ruff("/usr/bin/ruff", files, "F", 3)
-        assert calls == [1000, 1000, 500]
-        assert len(violations) == 3
+        assert [v.message for v in violations] == ["1000", "1000", "500"]
 
     def test_sg_runs_once_per_chunk_and_concatenates(self, monkeypatch):
-        calls = []
-
         def record(cmd, **_kwargs):
             paths = [a for a in cmd if a.endswith(".py")]
-            calls.append(len(paths))
             entry = {
                 "ruleId": "no-list-append",
                 "file": paths[0],
                 "range": {"start": {"line": 0}},
-                "message": "m",
+                "message": str(len(paths)),
             }
             return _Completed(stdout=json.dumps([entry]))
 
         monkeypatch.setattr(lint_gate.subprocess, "run", record)
         files = [f"f{i}.py" for i in range(2500)]
         violations = lint_gate._run_sg("/usr/bin/sg", "/rules", files)
-        assert calls == [1000, 1000, 500]
-        assert len(violations) == 3
+        assert [v.message for v in violations] == ["1000", "1000", "500"]

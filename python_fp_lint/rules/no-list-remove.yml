@@ -2,5 +2,8 @@ id: no-list-remove
 language: python
 rule:
   pattern: $LIST.remove($ITEM)
+  # os.remove deletes a file; it is not a list method.
+  not:
+    pattern: os.remove($ITEM)
 message: "list.remove() — use list comprehension filter"
 severity: warning

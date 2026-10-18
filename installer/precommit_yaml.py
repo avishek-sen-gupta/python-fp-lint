@@ -43,11 +43,14 @@ def repo_item(url: str) -> re.Pattern:
 
 
 def hook_lines(pad: str, hook: Mapping) -> list[str]:
-    lines = [f"{pad}- id: {hook['id']}\n"]
-    for key in ("args", "stages"):
-        if hook.get(key):
-            lines.append(f"{pad}  {key}: [{', '.join(hook[key])}]\n")
-    return lines
+    return [
+        f"{pad}- id: {hook['id']}\n",
+        *(
+            f"{pad}  {key}: [{', '.join(hook[key])}]\n"
+            for key in ("args", "stages")
+            if hook.get(key)
+        ),
+    ]
 
 
 def block_lines(indent: int, url: str, rev: str, hooks: Sequence[dict]) -> list[str]:
@@ -93,9 +96,10 @@ def content_end(lines: Sequence[str], start: int, indent: int) -> int:
     the block it belongs to.
     """
     end = block_end(lines, start, indent)
-    while end > start + 1 and not lines[end - 1].strip():
-        end -= 1
-    return end
+    # Walk back over trailing blanks, never past the block's first line.
+    return next(
+        (i for i in range(end, start + 1, -1) if lines[i - 1].strip()), start + 1
+    )
 
 
 def hook_span(lines: Sequence[str], id_at: int, pad: str) -> int:
@@ -197,44 +201,55 @@ def list_indent(lines: Sequence[str], repos_at: int) -> int:
     return len(item.group(1)) if item else 2
 
 
-def insert(path: str, url: str, rev: str, hooks: Sequence[dict]) -> None:
+def _read_lines(path: str) -> list[str]:
+    """The file's lines. A missing file reads as no lines, which inserts
+    exactly as a new file would: a fresh `repos:` and the block."""
     try:
         with open(path, encoding="utf-8") as f:
-            lines = f.readlines()
+            return f.readlines()
     except FileNotFoundError:
-        lines = None
+        return []
 
-    if lines is None:
-        out = ["repos:\n", *block_lines(2, url, rev, hooks)]
-    else:
-        at = find_block(lines, url)
-        if at is not None:
-            out, added = add_missing_hooks(lines, at[0], at[1], hooks)
-            if not added:
-                _emit("  already wired, skipping.")
-                return
-            _emit(f"  already wired, adding: {', '.join(added)}.")
-        else:
-            repos_at = next(
-                (i for i, x in enumerate(lines) if re.match(r"^repos:\s*$", x)), None
-            )
-            if repos_at is None:
-                # No repos: key -- append one rather than guessing where it belongs.
-                tail = "" if not lines or lines[-1].endswith("\n") else "\n"
-                out = [*lines, f"{tail}repos:\n", *block_lines(2, url, rev, hooks)]
-            else:
-                # Insert at the head of the list so the block cannot attach
-                # itself to a later top-level key, at the file's own indent.
-                indent = list_indent(lines, repos_at)
-                out = [
-                    *lines[: repos_at + 1],
-                    *block_lines(indent, url, rev, hooks),
-                    *lines[repos_at + 1 :],
-                ]
 
+def _write(path: str, lines: Sequence[str]) -> None:
     with open(path, "w", encoding="utf-8") as f:
-        f.writelines(out)
+        f.writelines(lines)
     _emit(f"  wrote {path}")
+
+
+def _with_new_block(
+    lines: Sequence[str], url: str, rev: str, hooks: Sequence[dict]
+) -> list[str]:
+    """`lines` with a whole new repo block for `url` added."""
+    repos_at = next(
+        (i for i, x in enumerate(lines) if re.match(r"^repos:\s*$", x)), None
+    )
+    if repos_at is None:
+        # No repos: key -- append one rather than guessing where it belongs.
+        tail = "" if not lines or lines[-1].endswith("\n") else "\n"
+        return [*lines, f"{tail}repos:\n", *block_lines(2, url, rev, hooks)]
+    # Insert at the head of the list so the block cannot attach itself to a
+    # later top-level key, at the file's own indent.
+    indent = list_indent(lines, repos_at)
+    return [
+        *lines[: repos_at + 1],
+        *block_lines(indent, url, rev, hooks),
+        *lines[repos_at + 1 :],
+    ]
+
+
+def insert(path: str, url: str, rev: str, hooks: Sequence[dict]) -> None:
+    lines = _read_lines(path)
+    at = find_block(lines, url)
+    if at is None:
+        _write(path, _with_new_block(lines, url, rev, hooks))
+        return
+    out, added = add_missing_hooks(lines, at[0], at[1], hooks)
+    if not added:
+        _emit("  already wired, skipping.")
+        return
+    _emit(f"  already wired, adding: {', '.join(added)}.")
+    _write(path, out)
 
 
 def remove(path: str, url: str) -> None:
@@ -251,25 +266,21 @@ def remove(path: str, url: str) -> None:
         return
 
     start, indent = at
-    out = [*lines[:start], *lines[block_end(lines, start, indent) :]]
+    kept = [*lines[:start], *lines[block_end(lines, start, indent) :]]
 
-    if any(re.match(r"^\s*-\s+repo:", x) for x in out):
-        pass
-    elif all(
+    if any(re.match(r"^\s*-\s+repo:", x) for x in kept):
+        _write(path, kept)
+        return
+    if all(
         not x.strip() or x.lstrip().startswith("#") or re.match(r"^repos:\s*$", x)
-        for x in out
+        for x in kept
     ):
         # Nothing left but an empty `repos:` -- the installer created this file.
         os.remove(path)
         _emit(f"  removed {path}")
         return
-    else:
-        # A bare `repos:` is null, which pre-commit rejects; keep it a list.
-        out = ["repos: []\n" if re.match(r"^repos:\s*$", x) else x for x in out]
-
-    with open(path, "w", encoding="utf-8") as f:
-        f.writelines(out)
-    _emit(f"  wrote {path}")
+    # A bare `repos:` is null, which pre-commit rejects; keep it a list.
+    _write(path, ["repos: []\n" if re.match(r"^repos:\s*$", x) else x for x in kept])
 
 
 def main() -> None:

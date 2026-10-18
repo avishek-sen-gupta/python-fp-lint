@@ -83,6 +83,33 @@ class TestReassignmentGateCleanCode:
         assert result.passed is True
 
 
+class TestExceptAndWithBindings:
+    def test_except_as_names_are_fresh_per_handler(self, tmp_path):
+        """Python deletes an `except ... as` name when its handler ends, so a
+        second handler binding the same name reassigns nothing."""
+        code = (
+            "def f(g):\n"
+            "    try:\n        g()\n"
+            "    except OSError as exc:\n        raise ValueError() from exc\n"
+            "    try:\n        g()\n"
+            "    except KeyError as exc:\n        raise ValueError() from exc\n"
+        )
+        path = _make_file(str(tmp_path), "exc.py", code)
+        assert ReassignmentGate().evaluate([path], str(tmp_path)).violations == []
+
+    def test_with_as_names_outlive_the_block_and_still_count(self, tmp_path):
+        code = (
+            "def h(p):\n"
+            "    with open(p) as f:\n        a = f.read()\n"
+            "    with open(p) as f:\n        return a + f.read()\n"
+        )
+        path = _make_file(str(tmp_path), "with.py", code)
+        result = ReassignmentGate().evaluate([path], str(tmp_path))
+        assert [(v.line, v.message) for v in result.violations] == [
+            (4, "'f' reassigned (scope: function h())")
+        ]
+
+
 class TestReassignmentGateDetection:
     """Code that should FAIL — contains reassignment."""
 

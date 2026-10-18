@@ -31,10 +31,9 @@ KEEP = {"GIT_EXEC_PATH"}
 
 def clean_env(**overrides: str) -> dict:
     """os.environ with git's redirecting variables removed, plus any overrides."""
-    env = {
+    kept = {
         key: value
         for key, value in os.environ.items()
         if not key.startswith("GIT_") or key in KEEP
     }
-    env.update(overrides)
-    return env
+    return {**kept, **overrides}

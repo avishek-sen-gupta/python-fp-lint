@@ -41,18 +41,24 @@ def _run_sg(filepath):
         timeout=30,
         cwd=_PKG_DIR,
     )
-    if not result.stdout.strip():
+    return [e.get("ruleId", "unknown") for e in _sg_entries(result.stdout)]
+
+
+def _sg_entries(stdout):
+    """ast-grep's JSON array, or its NDJSON stream line by line."""
+    if not stdout.strip():
         return []
     try:
-        entries = json.loads(result.stdout)
+        return json.loads(stdout)
     except json.JSONDecodeError:
-        entries = []
-        for line in result.stdout.strip().splitlines():
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return [e.get("ruleId", "unknown") for e in entries]
+        return [e for line in stdout.strip().splitlines() for e in _json_line(line)]
+
+
+def _json_line(line):
+    try:
+        return [json.loads(line)]
+    except json.JSONDecodeError:
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +107,10 @@ class TestListMutationRules:
 
     def test_list_remove_passes(self, tmp_path):
         f = _make_file(tmp_path, "items = [x for x in [1, 2] if x != 1]\n")
+        assert "no-list-remove" not in _run_sg(f)
+
+    def test_os_remove_is_a_file_deletion_not_a_list(self, tmp_path):
+        f = _make_file(tmp_path, "import os\nos.remove(path)\n")
         assert "no-list-remove" not in _run_sg(f)
 
 
@@ -919,13 +929,7 @@ def _run_sg_disabled(filepath):
         timeout=30,
         cwd=_PKG_DIR,
     )
-    if not result.stdout.strip():
-        return []
-    try:
-        entries = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        entries = []
-    return [e.get("ruleId", "unknown") for e in entries]
+    return [e.get("ruleId", "unknown") for e in _sg_entries(result.stdout)]
 
 
 @needs_sg

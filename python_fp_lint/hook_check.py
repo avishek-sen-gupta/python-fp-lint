@@ -29,9 +29,8 @@ def simulate_edit(
     if old_string not in content:
         return None
     if replace_all:
-        result = content.replace(old_string, new_string)
-        end_line = max(1, result.count("\n") + 1)
-        return result, 1, end_line
+        replaced = content.replace(old_string, new_string)
+        return replaced, 1, max(1, replaced.count("\n") + 1)
     start_line = content[: content.index(old_string)].count("\n") + 1
     new_line_count = max(1, new_string.count("\n") + 1)
     end_line = start_line + new_line_count - 1

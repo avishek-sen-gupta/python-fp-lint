@@ -7,12 +7,25 @@ that are assigned more than once within the same scope.
 
 import ast
 import os
-from collections import defaultdict
 from collections.abc import Sequence
 
 import beniget
 
 from python_fp_lint.result import BackendError, LintResult, LintViolation
+
+# Bindings that are never reassignments. Definitions and imports declare a
+# name rather than rebind it, and an `except ... as` name is deleted when its
+# handler ends, so each handler binds a fresh one. `with ... as` is not
+# deleted, and stays counted.
+_NOT_REBINDINGS = (
+    ast.FunctionDef,
+    ast.AsyncFunctionDef,
+    ast.ClassDef,
+    ast.Import,
+    ast.ImportFrom,
+    ast.alias,
+    ast.ExceptHandler,
+)
 
 
 class ReassignmentGate:
@@ -24,62 +37,52 @@ class ReassignmentGate:
             for f in dict.fromkeys(changed_files)
             if f.endswith(".py") and os.path.exists(f)
         ]
-        if not py_files:
-            return LintResult(passed=True, violations=[])
+        violations = [v for path in py_files for v in _check_file(path)]
+        return LintResult(passed=not violations, violations=violations)
 
-        all_violations = []
-        for filepath in py_files:
-            all_violations.extend(self._check_file(filepath))
 
-        return LintResult(passed=len(all_violations) == 0, violations=all_violations)
+def _check_file(filepath: str) -> list[LintViolation]:
+    try:
+        with open(filepath) as f:
+            source = f.read()
+        tree = ast.parse(source, filename=filepath)
+    except (SyntaxError, UnicodeDecodeError, OSError):
+        return []
 
-    @staticmethod
-    def _check_file(filepath: str) -> list[LintViolation]:
-        try:
-            with open(filepath) as f:
-                source = f.read()
-            tree = ast.parse(source, filename=filepath)
-        except (SyntaxError, UnicodeDecodeError, OSError):
-            return []
+    duc = beniget.DefUseChains()
+    # A syntax error above is left to Ruff, which reports it. Past that
+    # point the file is valid Python, so a failure here would otherwise be
+    # invisible: zero reassignments, banked by the ratchet as a fall.
+    try:
+        duc.visit(tree)
+    except Exception as exc:
+        raise BackendError(f"beniget could not analyse {filepath}: {exc}") from exc
 
-        duc = beniget.DefUseChains()
-        # A syntax error above is left to Ruff, which reports it. Past that
-        # point the file is valid Python, so a failure here would otherwise be
-        # invisible: zero reassignments, banked by the ratchet as a fall.
-        try:
-            duc.visit(tree)
-        except Exception as exc:
-            raise BackendError(f"beniget could not analyse {filepath}: {exc}") from exc
+    return [
+        violation
+        for scope_node, local_defs in duc.locals.items()
+        for violation in _rebindings(filepath, scope_node, local_defs)
+    ]
 
-        violations = []
-        for scope_node, local_defs in duc.locals.items():
-            names: dict[str, list] = defaultdict(list)
-            for chain in local_defs:
-                node = chain.node
-                name = chain.name()
-                if isinstance(
-                    node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-                ):
-                    continue
-                if isinstance(node, (ast.Import, ast.ImportFrom, ast.alias)):
-                    continue
-                names[name].append(node)
 
-            for name, nodes in names.items():
-                if len(nodes) > 1:
-                    for node in nodes[1:]:
-                        lineno = getattr(node, "lineno", 0)
-                        scope_desc = _scope_description(scope_node)
-                        violations.append(
-                            LintViolation(
-                                rule="reassignment",
-                                file=filepath,
-                                line=lineno,
-                                message=f"'{name}' reassigned (scope: {scope_desc})",
-                            )
-                        )
-
-        return violations
+def _rebindings(filepath: str, scope_node: ast.AST, local_defs) -> list[LintViolation]:
+    """Every binding of a name after its first, within one scope, in order."""
+    bindings = [
+        (chain.name(), chain.node)
+        for chain in local_defs
+        if not isinstance(chain.node, _NOT_REBINDINGS)
+    ]
+    scope = _scope_description(scope_node)
+    return [
+        LintViolation(
+            rule="reassignment",
+            file=filepath,
+            line=getattr(node, "lineno", 0),
+            message=f"'{name}' reassigned (scope: {scope})",
+        )
+        for name in dict.fromkeys(bound for bound, _ in bindings)
+        for node in [n for bound, n in bindings if bound == name][1:]
+    ]
 
 
 def _scope_description(node: ast.AST) -> str:

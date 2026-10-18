@@ -264,21 +264,21 @@ class TestRuffDirectoryConfig:
         return repo
 
     def test_per_file_ignores_apply_to_a_clean_worktree(self, repo):
-        repo = self._repo_with_per_file_ignores(repo)
-        assert _total(repo) == 0
+        legacy = self._repo_with_per_file_ignores(repo)
+        assert _total(legacy) == 0
 
     def test_per_file_ignores_apply_to_a_dirty_worktree(self, repo):
         """The reviewer's reproduction: the index is unchanged, so is the total."""
-        repo = self._repo_with_per_file_ignores(repo)
-        clean = _total(repo)
-        (repo / "legacy" / "mod.py").write_text(self.LEGACY + "\n")  # dirty, unstaged
-        assert _total(repo) == clean == 0
+        legacy = self._repo_with_per_file_ignores(repo)
+        clean = _total(legacy)
+        (legacy / "legacy" / "mod.py").write_text(self.LEGACY + "\n")  # dirty, unstaged
+        assert _total(legacy) == clean == 0
 
     def test_the_same_file_outside_the_ignored_directory_still_counts(self, repo):
-        repo = self._repo_with_per_file_ignores(repo)
-        (repo / "current.py").write_text(self.LEGACY)
-        _git(repo, "add", "current.py")
-        assert _total(repo) > 0
+        legacy = self._repo_with_per_file_ignores(repo)
+        (legacy / "current.py").write_text(self.LEGACY)
+        _git(legacy, "add", "current.py")
+        assert _total(legacy) > 0
 
 
 class TestUndecodableFiles:

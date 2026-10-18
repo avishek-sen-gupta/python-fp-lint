@@ -12,6 +12,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
+from pathlib import Path
 
 from python_fp_lint import baseline as baseline_file
 from python_fp_lint.reassignment_gate import ReassignmentGate
@@ -98,10 +99,11 @@ class LintGate:
         if not py_files:
             return LintResult(passed=True, violations=[])
 
-        violations = []
-        violations.extend(self._run_ast_grep(py_files, project_root))
-        violations.extend(self._run_ruff(py_files))
-        violations.extend(self._run_reassignment(py_files, project_root))
+        violations = [
+            *self._run_ast_grep(py_files, project_root),
+            *self._run_ruff(py_files),
+            *self._run_reassignment(py_files, project_root),
+        ]
 
         return LintResult(passed=len(violations) == 0, violations=violations)
 
@@ -164,11 +166,10 @@ class LintGate:
             if os.path.abspath(rules_dir) == _package_rules_dir()
             else rules_dir
         )
-        violations = _run_sg(sg, scan_dir, files)
         allowed = self._resolve_ast_grep_rules()
-        if allowed:
-            violations = [v for v in violations if v.rule in allowed]
-        return violations
+        return [
+            v for v in _run_sg(sg, scan_dir, files) if not allowed or v.rule in allowed
+        ]
 
     def _resolve_ruff_select(self) -> str:
         if self.settings.ruff_select:
@@ -228,12 +229,15 @@ class LintGate:
 
     def _resolve_rules_dir(self, project_root: str) -> str | None:
         configured = self._config("lint_rules_dir")
-        if configured and self.locations.config_path:
-            # A relative lint_rules_dir is relative to the config file itself,
-            # so a config can be checked in beside the rules it points at.
-            base = os.path.dirname(os.path.abspath(self.locations.config_path))
-            configured = os.path.join(base, configured)
-        return _resolve_rules_dir(self.locations.rules_dir, project_root, configured)
+        config_path = self.locations.config_path
+        # A relative lint_rules_dir is relative to the config file itself,
+        # so a config can be checked in beside the rules it points at.
+        anchored = (
+            os.path.join(os.path.dirname(os.path.abspath(config_path)), configured)
+            if configured and config_path
+            else configured
+        )
+        return _resolve_rules_dir(self.locations.rules_dir, project_root, anchored)
 
 
 # --- shared helpers ---
@@ -276,31 +280,29 @@ def _walk_directory(directory: str) -> list[str]:
     ]
 
 
+def _expand_path(path: str) -> list[str]:
+    """One directory, glob or plain file, as the paths it stands for."""
+    if os.path.isdir(path):
+        return _walk_directory(path)
+    if any(c in path for c in ("*", "?", "[")):
+        return glob.glob(path, recursive=True)
+    return [path]
+
+
 def _expand_paths(paths: Sequence[str]) -> list[str]:
     """Expand directories, globs, and plain files into a flat list of paths."""
-    expanded = []
-    for p in paths:
-        if os.path.isdir(p):
-            expanded.extend(_walk_directory(p))
-        elif any(c in p for c in ("*", "?", "[")):
-            expanded.extend(glob.glob(p, recursive=True))
-        else:
-            expanded.append(p)
-    return expanded
+    return [expanded for p in paths for expanded in _expand_path(p)]
 
 
 def _filter_python_files(files: Sequence[str]) -> list[str]:
-    """Expand dirs/globs, then filter to existing, unique .py files."""
-    seen = set()
-    result = []
-    for f in _expand_paths(files):
-        real = os.path.abspath(f)
-        if real in seen:
-            continue
-        seen.add(real)
-        if real.endswith(".py") and os.path.exists(real):
-            result.append(real)
-    return result
+    """Expand dirs/globs, then filter to existing, unique .py files.
+
+    dict.fromkeys deduplicates while keeping each path's first position."""
+    return [
+        real
+        for real in dict.fromkeys(os.path.abspath(f) for f in _expand_paths(files))
+        if real.endswith(".py") and os.path.exists(real)
+    ]
 
 
 # One token per alternative, longest first, so `**` never splits into two `*`.
@@ -365,15 +367,21 @@ def _default_rules_cache_root() -> str:
 
 
 def _rules_signature(rules_dir: str) -> str:
-    """Content hash of every file under rules_dir, used as its cache key."""
-    digest = hashlib.sha256()
-    for root, _dirs, files in sorted(os.walk(rules_dir)):
-        for name in sorted(files):
-            path = os.path.join(root, name)
-            digest.update(os.path.relpath(path, rules_dir).encode())
-            with open(path, "rb") as f:
-                digest.update(f.read())
-    return digest.hexdigest()
+    """Content hash of every file under rules_dir, used as its cache key.
+
+    Each file contributes its relative path then its bytes, in sorted order.
+    Hashing the joined bytes equals feeding them to update() in turn, so the
+    keys of existing cache entries are unchanged."""
+    paths = [
+        os.path.join(root, name)
+        for root, _dirs, files in sorted(os.walk(rules_dir))
+        for name in sorted(files)
+    ]
+    return hashlib.sha256(
+        b"".join(
+            os.path.relpath(p, rules_dir).encode() + Path(p).read_bytes() for p in paths
+        )
+    ).hexdigest()
 
 
 def _materialize_rules_dir(source_dir: str, cache_root: str | None) -> str:
@@ -518,15 +526,16 @@ def _sg_entries(stdout: str) -> list[dict]:
         return parsed
     except json.JSONDecodeError:
         pass
-    entries = []
-    for line in stdout.strip().splitlines():
-        try:
-            entries.append(json.loads(line))
-        except json.JSONDecodeError as exc:
-            raise BackendError(
-                f"ast-grep produced unparseable output: {line[:80]!r}"
-            ) from exc
-    return entries
+    return [_ndjson_entry(line) for line in stdout.strip().splitlines()]
+
+
+def _ndjson_entry(line: str) -> dict:
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise BackendError(
+            f"ast-grep produced unparseable output: {line[:80]!r}"
+        ) from exc
 
 
 def _sg_violation(entry: Mapping) -> LintViolation:

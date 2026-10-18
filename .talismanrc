@@ -25,7 +25,7 @@ fileignoreconfig:
 - filename: python_fp_lint/precommit.py
   checksum: f29eb1359e8861cc6a6b59b85532d3398aff6d83d4e3eb5ec27a953e8993fe12
 - filename: tests/test_config.py
-  checksum: ec19b3b451ce0ea4e41ef1ffba07af526ed3492a2ffdb7770e6fdd55449a68b4
+  checksum: 0aa8d68c054f966dbde006e7055c06f4dbdfa5e1e2b1a7dac5c06cf4a7607a67
 - filename: install-precommit.sh
   checksum: 52bab58cdcaa4d7701fc816ffad3655f298d6c38d52116150511072b0eb7aa72
 - filename: tests/test_exclude.py
@@ -37,7 +37,7 @@ fileignoreconfig:
 - filename: tests/test_max_statements.py
   checksum: 80b13cc193390214b64830cd5eb568159a65b2a9753922ccc0cadf17d46e8de8
 - filename: tests/gitenv.py
-  checksum: a5a055283eea1583fe57f0d158de80694bdf0ae4bb4485473f6a0b50baa674e9
+  checksum: 2e4fc42617fd8dcd3a0f16f34237e469a4af41a4df7f26af0970e6346c8e65e8
 - filename: tests/conftest.py
   checksum: d95adcdcea071b5df2ac4baf09e0e456c492bc22bf00c65e5b0bc8049317aebd
 - filename: tests/test_fixture_isolation.py
@@ -49,5 +49,9 @@ fileignoreconfig:
 - filename: tests/test_max_positional_args.py
   checksum: 648107dcc051e09b4aea7b922c94ec9dffda6bf9bdfba0de39264d316c5203f7
 - filename: tests/test_reassignment_gate.py
-  checksum: f0746c9252a25fd724aa8b21e1ad0ddc2c29b9efbaf5d0b5caec34edb7318dd3
+  checksum: 4ab35532b045c163eb7e565126e59538367886fe8b59483937a92a36f9ce376c
+- filename: installer/precommit_yaml.py
+  checksum: 4af6f18884311aa4fba23b30dba01aa1dc720e497c45062c8d661dde0e654b5c
+- filename: python_fp_lint/reassignment_gate.py
+  checksum: ade29e91834317d4cf8b5d8744fecae8f09efe351d262cd2794b9f1f33e5c9e8
 version: "1.0"
