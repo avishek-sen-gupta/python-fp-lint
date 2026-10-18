@@ -26,11 +26,15 @@ def resolve_path(
     """
     if cli_value:
         return cli_value
+    return _from_config(config_value, config_path)
+
+
+def _from_config(config_value: str | None, config_path: str | None) -> str | None:
+    """The config file's baseline, anchored to the config file's directory."""
     if not config_value:
         return None
     if config_path:
-        base = os.path.dirname(os.path.abspath(config_path))
-        return os.path.join(base, config_value)
+        return os.path.join(os.path.dirname(os.path.abspath(config_path)), config_value)
     return config_value
 
 
@@ -41,6 +45,11 @@ def read(path: str) -> int:
     baseline of zero: zero would read as a clean repo and let every commit
     through, which is the opposite of what the file is for.
     """
+    return _valid_total(_load(path), path)
+
+
+def _load(path: str):
+    """The baseline file's parsed JSON, or BaselineError if it cannot be read."""
     if not os.path.exists(path):
         raise BaselineError(
             f"baseline file not found: {path} "
@@ -48,10 +57,12 @@ def read(path: str) -> int:
         )
     try:
         with open(path) as f:
-            data = json.load(f)
+            return json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
         raise BaselineError(f"cannot read baseline file {path}: {exc}") from exc
 
+
+def _valid_total(data, path: str) -> int:
     total = data.get("total") if isinstance(data, dict) else None
     if isinstance(total, bool) or not isinstance(total, int) or total < 0:
         raise BaselineError(f"baseline file {path} has no valid 'total': {total!r}")

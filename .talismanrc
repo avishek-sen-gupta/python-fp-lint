@@ -13,7 +13,7 @@ fileignoreconfig:
 - filename: tests/test_cli.py
   checksum: 8862259380d1cfd2f614bc4e90f763ea4ecbebe92c44681c9908b70b65fa94b5
 - filename: python_fp_lint/__main__.py
-  checksum: 8618c214d8a2fd976f59b9197cd299b216bd739220d46f00a839bdb5400f15d5
+  checksum: d67df84eb7c88cc58abdbf9a99c7eba2078407f9e0611098bd6d54c0da390f51
 - filename: docs/superpowers/specs/2026-04-14-semgrep-to-ruff-migration-design.md
   checksum: 3ce58859ebc2bf366222007dc85a4f8abde5acace14efc92ad3f7edca656bd1a
 - filename: tests/test_ruff_integration.py
@@ -25,7 +25,7 @@ fileignoreconfig:
 - filename: python_fp_lint/precommit.py
   checksum: f29eb1359e8861cc6a6b59b85532d3398aff6d83d4e3eb5ec27a953e8993fe12
 - filename: tests/test_config.py
-  checksum: 7fca75015b3f703dd92f6be3e141d440f2d5898fc68750c252306ede5035f4c4
+  checksum: 754ff19758c1ecef0cad4e80c3a11bef05c8432a1870e9571e40a0724131bc51
 - filename: install-precommit.sh
   checksum: 52bab58cdcaa4d7701fc816ffad3655f298d6c38d52116150511072b0eb7aa72
 - filename: tests/test_exclude.py

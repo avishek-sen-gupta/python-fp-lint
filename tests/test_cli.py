@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from gitenv import clean_env
 
+from python_fp_lint.__main__ import _build_parser, _run_precommit
 from python_fp_lint.rules_meta import list_rules
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -353,6 +354,47 @@ class TestBaselineRefusesToGuess:
         assert path.exists() is False
 
 
+def _git_in(repo, *args, check=True):
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=check,
+        capture_output=True,
+        text=True,
+        env=clean_env(),
+    )
+
+
+def _stage_file(repo, name, content):
+    """Write a file and stage it."""
+    (repo / name).write_text(content)
+    _git_in(repo, "add", name)
+
+
+def _sparse_two_trees(repo, away_content):
+    """Commit a clean keep/a.py and away/b.py, then sparse-check out only keep/
+    -- away/b.py stays in the index but leaves the disk."""
+    (repo / "keep").mkdir()
+    (repo / "keep" / "a.py").write_text("y = 2\n")
+    (repo / "away").mkdir()
+    (repo / "away" / "b.py").write_text(away_content)
+    _git_in(repo, "add", "-A")
+    _git_in(repo, "commit", "-qm", "two trees")
+    _git_in(repo, "sparse-checkout", "set", "keep")
+
+
+def _conflicted_mod(repo, theirs, ours):
+    """Leave mod.py unmerged: a branch and the base each change it."""
+    base = _git_in(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    _git_in(repo, "checkout", "-q", "-b", "other")
+    (repo / "mod.py").write_text(theirs)
+    _git_in(repo, "commit", "-qam", "theirs")
+    _git_in(repo, "checkout", "-q", base)
+    (repo / "mod.py").write_text(ours)
+    _git_in(repo, "commit", "-qam", "ours")
+    _git_in(repo, "merge", "other", check=False)
+
+
 class TestPrecommitRatchet:
     DIRTY = 'd = {}\nd["k"] = 1\n'  # one violation
     DIRTIER = 'd = {}\nd["k"] = 1\nd.update({"j": 2})\n'  # two
@@ -552,23 +594,26 @@ class TestPrecommitRatchet:
         assert len(data["violations"]) == data["reported_violation_count"]
         assert {v["file"] for v in data["violations"]} == {"other.py"}
 
-    def test_a_clean_staged_file_still_names_the_violations(self, tmp_path):
+    def _stale_baseline_with_clean_staged_file(self, tmp_path):
         """A staged set that filters to nothing is the empty-report bug again.
 
         Realistic whenever the baseline is stale against the index: after a
         pull, a merge, or someone else's commit.
         """
         repo = self._repo(tmp_path, self.DIRTIER, baseline_total=1)
-        (repo / "clean.py").write_text("x = 1\n")
-        subprocess.run(
-            ["git", "add", "clean.py"], cwd=repo, check=True, env=clean_env()
-        )
+        _stage_file(repo, "clean.py", "x = 1\n")
+        return repo
+
+    def test_a_clean_staged_file_still_names_the_violations(self, tmp_path):
+        repo = self._stale_baseline_with_clean_staged_file(tmp_path)
         result = self._run_text(repo, "--no-tighten")
         assert result.returncode == 1
         assert result.stdout.count("ratchet: 1 → 2 (+1)") == 1
         assert result.stdout.count("mod.py:") == 2
         assert "did not stage" not in result.stdout
 
+    def test_a_clean_staged_file_still_lists_the_violations_in_json(self, tmp_path):
+        repo = self._stale_baseline_with_clean_staged_file(tmp_path)
         data = json.loads(self._run(repo, "--no-tighten").stdout)
         assert data["violation_count"] == 2
         assert data["reported_violation_count"] == 2
@@ -577,20 +622,7 @@ class TestPrecommitRatchet:
     def test_a_sparse_checkout_does_not_bank_a_windfall(self, tmp_path):
         """`checkout-index -a` skipped skip-worktree entries, exit 0, silently."""
         repo = self._repo(tmp_path, "x = 1\n", baseline_total=2)
-        (repo / "keep").mkdir()
-        (repo / "keep" / "a.py").write_text("y = 2\n")
-        (repo / "away").mkdir()
-        (repo / "away" / "b.py").write_text(self.DIRTIER)
-        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, env=clean_env())
-        subprocess.run(
-            ["git", "commit", "-qm", "two trees"], cwd=repo, check=True, env=clean_env()
-        )
-        subprocess.run(
-            ["git", "sparse-checkout", "set", "keep"],
-            cwd=repo,
-            check=True,
-            env=clean_env(),
-        )
+        _sparse_two_trees(repo, self.DIRTIER)
         assert (repo / "away" / "b.py").exists() is False  # skip-worktree
 
         result = self._run(repo)
@@ -600,32 +632,7 @@ class TestPrecommitRatchet:
 
     def test_an_unmerged_index_exits_two(self, tmp_path):
         repo = self._repo(tmp_path, self.DIRTY, baseline_total=1)
-        base = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=clean_env(),
-        ).stdout.strip()
-
-        def git(*args, check=True):
-            return subprocess.run(
-                ["git", *args],
-                cwd=repo,
-                check=check,
-                capture_output=True,
-                env=clean_env(),
-            )
-
-        git("checkout", "-q", "-b", "other")
-        (repo / "mod.py").write_text(self.DIRTIER)
-        git("commit", "-qam", "theirs")
-        git("checkout", "-q", base)
-        (repo / "mod.py").write_text(self.DIRTY + "e = []\n")
-        git("commit", "-qam", "ours")
-        git("merge", "other", check=False)
-
+        _conflicted_mod(repo, theirs=self.DIRTIER, ours=self.DIRTY + "e = []\n")
         result = self._run(repo)
         assert result.returncode == 2
         assert "Traceback" not in result.stderr
@@ -753,39 +760,17 @@ class TestPrecommitWithoutBaselineIsUnchanged:
         live -- so no amount of PATH manipulation in a child process makes
         them unreachable (mirrors `TestBaselineRefusesToGuess`).
         """
-        from python_fp_lint.__main__ import _run_precommit
-
-        def git(*args):
-            subprocess.run(
-                ["git", *args],
-                cwd=tmp_path,
-                check=True,
-                capture_output=True,
-                env=clean_env(),
-            )
-
-        git("init", "-q", "--template=")
+        _git_in(tmp_path, "init", "-q", "--template=")
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(
             "python_fp_lint.__main__.missing_backends", lambda: ["ruff"]
         )
-
-        class Args:
-            config = str(tmp_path / "does-not-exist.json")
-            baseline = None
-            format = "text"
-            ruff_select = None
-            ast_grep_rules = ""
-            exclude = ""
-            max_complexity = None
-            max_statements = None
-            max_positional_args = None
-            strict = True
-            files = ()
-            no_tighten = False
-
+        # The real parser, so the arguments are exactly what the CLI builds.
+        args = _build_parser().parse_args(
+            ["precommit", "--config", str(tmp_path / "does-not-exist.json"), "--strict"]
+        )
         with pytest.raises(SystemExit) as exc:
-            _run_precommit(Args())
+            _run_precommit(args)
         assert exc.value.code == 2
         err = capsys.readouterr().err
         assert err == "error: required lint backend(s) not found: ruff\n"

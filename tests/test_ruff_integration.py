@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import subprocess
 
 import pytest
 
@@ -9,6 +10,7 @@ from python_fp_lint import lint_gate
 from python_fp_lint.lint_gate import (
     _DEFAULT_MAX_COMPLEXITY,
     _DEFAULT_RUFF_SELECT,
+    BackendError,
     _find_ruff,
     _run_ruff,
 )
@@ -94,11 +96,6 @@ class TestRunRuff:
 
     def test_returns_empty_on_timeout(self, tmp_path, monkeypatch):
         """If ruff times out, raise BackendError (don't silently fail)."""
-        import subprocess
-
-        import pytest
-
-        from python_fp_lint.lint_gate import BackendError
 
         def fake_run(*args, **kwargs):
             raise subprocess.TimeoutExpired(cmd="ruff", timeout=30)

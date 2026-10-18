@@ -47,6 +47,12 @@ def repo(tmp_path):
     return tmp_path
 
 
+def _stage(repo, name, content):
+    """Write a file and stage it."""
+    (repo / name).write_text(content)
+    _git(repo, "add", name)
+
+
 def _run_precommit(repo, *args):
     return subprocess.run(
         [
@@ -79,8 +85,7 @@ class TestStagedDiscovery:
         assert staged_python_files(str(repo)) == []
 
     def test_materialize_writes_staged_blob_not_worktree(self, repo, tmp_path):
-        (repo / "mod.py").write_text("x = 1\nstaged = 2\n")
-        _git(repo, "add", "mod.py")
+        _stage(repo, "mod.py", "x = 1\nstaged = 2\n")
         (repo / "mod.py").write_text("x = 1\nworktree_only = 3\n")
         dest = tmp_path / "out"
         dest.mkdir()
@@ -136,12 +141,10 @@ class TestPrecommitCLI:
     def test_preexisting_violation_also_blocks(self, repo):
         """Every violation in a staged file counts, not just newly added ones."""
         legacy = "d = {}\nd['k'] = 1\n"
-        (repo / "legacy.py").write_text(legacy)
-        _git(repo, "add", "legacy.py")
+        _stage(repo, "legacy.py", legacy)
         _git(repo, "commit", "-qm", "legacy", "--no-verify")
         # Append a clean line — the pre-existing violation still blocks.
-        (repo / "legacy.py").write_text(legacy + "clean = 2\n")
-        _git(repo, "add", "legacy.py")
+        _stage(repo, "legacy.py", legacy + "clean = 2\n")
         result = _run_precommit(repo)
         assert result.returncode == 1
         data = json.loads(result.stdout)

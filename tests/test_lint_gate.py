@@ -5,6 +5,7 @@ import dataclasses
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -30,16 +31,12 @@ _PKG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "python_fp_l
 @pytest.fixture
 def rules_dir(tmp_path):
     """Copy ast-grep rules and config into a temp directory."""
-    import shutil as _shutil
-
-    src_rules = os.path.join(_PKG_DIR, "rules")
-    dst_rules = tmp_path / "rules"
-    dst_rules.mkdir()
-    for rule_file in os.listdir(src_rules):
-        if rule_file.endswith(".yml"):
-            _shutil.copy(os.path.join(src_rules, rule_file), dst_rules / rule_file)
-    sgconfig = tmp_path / "sgconfig.yml"
-    sgconfig.write_text("ruleDirs:\n  - rules\n")
+    shutil.copytree(
+        os.path.join(_PKG_DIR, "rules"),
+        tmp_path / "rules",
+        ignore=lambda _dir, names: [n for n in names if not n.endswith(".yml")],
+    )
+    (tmp_path / "sgconfig.yml").write_text("ruleDirs:\n  - rules\n")
     return str(tmp_path)
 
 
@@ -139,6 +136,29 @@ class TestMaterializeRulesDir:
 
 
 @needs_sg
+def _consumer_with_ignored_rules(tmp_path):
+    """A consumer repo whose rules live under a path it gitignores.
+
+    The rules sit inside a directory with its own self-ignoring .gitignore
+    ("*") -- the exact layout `uv`/`venv` generate for .venv/. That nested
+    marker (not just the parent entry) is what triggers ast-grep's silent
+    skip. Returns the repo and the rules source directory.
+    """
+    repo = tmp_path / "consumer_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, env=clean_env())
+    (repo / ".gitignore").write_text("ignored_deps/\n")
+    rules_src = repo / "ignored_deps" / "python_fp_lint"
+    (rules_src / "rules").mkdir(parents=True)
+    (repo / "ignored_deps" / ".gitignore").write_text("*\n")
+    shutil.copy(
+        os.path.join(_PKG_DIR, "rules", "no-list-append.yml"),
+        rules_src / "rules" / "no-list-append.yml",
+    )
+    (rules_src / "sgconfig.yml").write_text("ruleDirs:\n  - rules\n")
+    return repo, rules_src
+
+
 class TestAstGrepIgnoresGitignoredRulesDir:
     """Regression test for the real-world bug: ast-grep silently finds zero
     violations when the rules directory lives under a path excluded by the
@@ -147,27 +167,7 @@ class TestAstGrepIgnoresGitignoredRulesDir:
     layout and asserts the gate still finds violations."""
 
     def test_finds_violations_when_rules_dir_is_gitignored(self, tmp_path, monkeypatch):
-        import subprocess as _subprocess
-
-        repo = tmp_path / "consumer_repo"
-        repo.mkdir()
-        _subprocess.run(["git", "init", "-q"], cwd=repo, check=True, env=clean_env())
-        (repo / ".gitignore").write_text("ignored_deps/\n")
-
-        # Rules live under a path this repo's own .gitignore excludes, with a
-        # nested self-ignoring .gitignore ("*") inside it -- the exact layout
-        # `uv`/`venv` generate for .venv/. This nested marker (not just the
-        # parent entry) is what actually triggers ast-grep's silent skip.
-        rules_src = repo / "ignored_deps" / "python_fp_lint"
-        rules_dir = rules_src / "rules"
-        rules_dir.mkdir(parents=True)
-        (repo / "ignored_deps" / ".gitignore").write_text("*\n")
-        shutil.copy(
-            os.path.join(_PKG_DIR, "rules", "no-list-append.yml"),
-            rules_dir / "no-list-append.yml",
-        )
-        (rules_src / "sgconfig.yml").write_text("ruleDirs:\n  - rules\n")
-
+        repo, rules_src = _consumer_with_ignored_rules(tmp_path)
         target = repo / "widget.py"
         target.write_text("items = []\nitems.append(1)\n")
 

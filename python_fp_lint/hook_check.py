@@ -116,16 +116,19 @@ def check_tool_event(
     # that gets linted.
     if gate.is_excluded(file_path, os.getcwd()):
         return 0
+    return _block_if_violating(gate, file_path, outcome_of(tool_input))
 
-    outcome = outcome_of(tool_input)
+
+def _block_if_violating(
+    gate: LintGate, file_path: str, outcome: tuple[str, int, int] | None
+) -> int:
+    """2, after reporting, when the edited lines carry violations; else 0."""
     if outcome is None:
         return 0
     post_content, start_line, end_line = outcome
-
     in_range = _lint_content(gate, post_content, start_line, end_line)
     if not in_range:
         return 0
-
     _report_block(file_path, start_line, end_line, in_range)
     return 2
 

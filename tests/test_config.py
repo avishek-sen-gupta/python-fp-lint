@@ -217,6 +217,10 @@ def _install_rules(dest):
     return dest
 
 
+def _never_materialized(src, root):
+    raise AssertionError("configured rules dir must not be materialized")
+
+
 class TestConfiguredRulesDirWins:
     """A rules dir named in the config outranks the copy inside the package."""
 
@@ -235,10 +239,7 @@ class TestConfiguredRulesDirWins:
         rules = _install_rules(str(tmp_path / ".python-fp-lint"))
         path = _write_config(tmp_path, lint_rules_dir=".python-fp-lint")
 
-        def never_materialized(src, root):
-            raise AssertionError("configured rules dir must not be materialized")
-
-        monkeypatch.setattr(lint_gate, "_materialize_rules_dir", never_materialized)
+        monkeypatch.setattr(lint_gate, "_materialize_rules_dir", _never_materialized)
         target = tmp_path / "m.py"
         target.write_text("xs = []\nxs.append(1)\n")
 

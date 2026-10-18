@@ -266,8 +266,12 @@ def remove(path: str, url: str) -> None:
         return
 
     start, indent = at
-    kept = [*lines[:start], *lines[block_end(lines, start, indent) :]]
+    _write_remaining(path, [*lines[:start], *lines[block_end(lines, start, indent) :]])
 
+
+def _write_remaining(path: str, kept: Sequence[str]) -> None:
+    """Write what is left once the block is gone, or delete a file that only
+    the installer's own empty `repos:` remains in."""
     if any(re.match(r"^\s*-\s+repo:", x) for x in kept):
         _write(path, kept)
         return
@@ -283,22 +287,24 @@ def remove(path: str, url: str) -> None:
     _write(path, ["repos: []\n" if re.match(r"^repos:\s*$", x) else x for x in kept])
 
 
-def main() -> None:
+def _add_common(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    p.add_argument("--config", required=True, metavar="PATH")
+    p.add_argument("--url", required=True)
+    return p
+
+
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-
-    def common(p):
-        p.add_argument("--config", required=True, metavar="PATH")
-        p.add_argument("--url", required=True)
-        return p
-
-    add = common(sub.add_parser("insert"))
+    add = _add_common(sub.add_parser("insert"))
     add.add_argument("--rev", required=True)
     add.add_argument("--hooks", required=True, metavar="JSON")
+    _add_common(sub.add_parser("remove"))
+    return parser
 
-    common(sub.add_parser("remove"))
 
-    args = parser.parse_args()
+def main() -> None:
+    args = _parser().parse_args()
     if args.command == "insert":
         insert(args.config, args.url, args.rev, json.loads(args.hooks))
     else:

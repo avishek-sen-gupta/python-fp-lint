@@ -85,11 +85,13 @@ def _rebindings(filepath: str, scope_node: ast.AST, local_defs) -> list[LintViol
     ]
 
 
-def _scope_description(node: ast.AST) -> str:
-    if isinstance(node, ast.Module):
-        return "module"
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return f"function {node.name}()"
-    if isinstance(node, ast.ClassDef):
-        return f"class {node.name}"
-    return type(node).__name__
+def _scope_description(node: ast.AST) -> str:  # noqa: C901 -- one case per scope kind
+    match node:
+        case ast.Module():
+            return "module"
+        case ast.FunctionDef() | ast.AsyncFunctionDef():
+            return f"function {node.name}()"
+        case ast.ClassDef():
+            return f"class {node.name}"
+        case _:
+            return type(node).__name__

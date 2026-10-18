@@ -116,34 +116,38 @@ def _enforce_strict(args) -> None:
         _require_backends()
 
 
+def _violation_json(v) -> dict:
+    return {"rule": v.rule, "file": v.file, "line": v.line, "message": v.message}
+
+
+def _violation_text(v) -> str:
+    loc = f"{v.file}:{v.line}" if v.line else v.file
+    return f"  [{v.rule}] {loc} — {v.message}"
+
+
+def _check_text(violations) -> str:
+    if not violations:
+        return "No violations found."
+    return "\n".join(
+        [
+            *(_violation_text(v) for v in violations),
+            f"\n{len(violations)} violation(s) found.",
+        ]
+    )
+
+
+def _check_json(result) -> str:
+    payload = {
+        "passed": result.passed,
+        "violation_count": len(result.violations),
+        "violations": [_violation_json(v) for v in result.violations],
+    }
+    return json.dumps(payload, indent=2)
+
+
 def _report(result, fmt: str) -> None:
     """Print a LintResult in the requested format and exit 0/1."""
-    violations = result.violations
-
-    if fmt == "json":
-        payload = {
-            "passed": result.passed,
-            "violation_count": len(violations),
-            "violations": [
-                {
-                    "rule": v.rule,
-                    "file": v.file,
-                    "line": v.line,
-                    "message": v.message,
-                }
-                for v in violations
-            ],
-        }
-        emit(json.dumps(payload, indent=2))
-    else:
-        if not violations:
-            emit("No violations found.")
-        else:
-            for v in violations:
-                loc = f"{v.file}:{v.line}" if v.line else v.file
-                emit(f"  [{v.rule}] {loc} — {v.message}")
-            emit(f"\n{len(violations)} violation(s) found.")
-
+    emit(_check_json(result) if fmt == "json" else _check_text(result.violations))
     sys.exit(0 if result.passed else 1)
 
 
@@ -209,52 +213,67 @@ def _reported_violations(violations, staged: set[str]) -> tuple[list, bool]:
 def _report_ratchet(verdict, violations, staged: set[str], fmt: str) -> None:
     """Print a ratchet verdict and exit 0 (clean or tightened) or 1 (regression)."""
     reported, is_local = _reported_violations(violations, staged)
-    remainder = len(violations) - len(reported)
+    lines = (
+        [_ratchet_json(verdict, violations, reported)]
+        if fmt == "json"
+        else _ratchet_text(verdict, reported, len(violations) - len(reported), is_local)
+    )
+    if lines:
+        emit("\n".join(lines))
+    sys.exit(1 if verdict.regressed else 0)
 
-    if fmt == "json":
-        payload = {
-            "passed": not verdict.regressed,
-            # The repo-wide total, which is what the ratchet compares; the
-            # length of `violations` below is `reported_violation_count`, and
-            # the two differ whenever the report is filtered or capped.
-            "violation_count": len(violations),
-            "reported_violation_count": len(reported),
-            "ratchet": {
-                "baseline": verdict.recorded,
-                "total": verdict.total,
-                "tightened": verdict.tightened,
-            },
-            "violations": [
-                {"rule": v.rule, "file": v.file, "line": v.line, "message": v.message}
-                for v in reported
-            ],
-        }
-        emit(json.dumps(payload, indent=2))
-    elif verdict.regressed:
-        emit(f"ratchet: {verdict.recorded} → {verdict.total} (+{verdict.delta})")
-        for v in reported:
-            loc = f"{v.file}:{v.line}" if v.line else v.file
-            emit(f"  [{v.rule}] {loc} — {v.message}")
-        if not remainder:
-            pass
-        elif is_local:
-            emit(
-                f"\n{remainder} further violation(s) in the rest of the repo, "
-                "in files you did not stage."
-            )
-        else:
-            emit(f"\n… and {remainder} more (run `check` for the full list)")
-    elif verdict.tightened:
-        emit(f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta})")
-    elif verdict.dropped:
+
+def _ratchet_json(verdict, violations, reported) -> str:
+    payload = {
+        "passed": not verdict.regressed,
+        # The repo-wide total, which is what the ratchet compares; the
+        # length of `violations` below is `reported_violation_count`, and
+        # the two differ whenever the report is filtered or capped.
+        "violation_count": len(violations),
+        "reported_violation_count": len(reported),
+        "ratchet": {
+            "baseline": verdict.recorded,
+            "total": verdict.total,
+            "tightened": verdict.tightened,
+        },
+        "violations": [_violation_json(v) for v in reported],
+    }
+    return json.dumps(payload, indent=2)
+
+
+def _ratchet_text(verdict, reported, remainder: int, is_local: bool) -> list[str]:
+    """The text report's lines; none at all when the total is unchanged."""
+    if verdict.regressed:
+        return [
+            f"ratchet: {verdict.recorded} → {verdict.total} (+{verdict.delta})",
+            *(_violation_text(v) for v in reported),
+            *_remainder_note(remainder, is_local),
+        ]
+    return _fall_text(verdict)
+
+
+def _remainder_note(remainder: int, is_local: bool) -> list[str]:
+    if not remainder:
+        return []
+    if is_local:
+        return [
+            f"\n{remainder} further violation(s) in the rest of the repo, "
+            "in files you did not stage."
+        ]
+    return [f"\n… and {remainder} more (run `check` for the full list)"]
+
+
+def _fall_text(verdict) -> list[str]:
+    if verdict.tightened:
+        return [f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta})"]
+    if verdict.dropped:
         # --no-tighten: the only way to reach a fall that was not recorded.
         # Silence here is how a baseline drifts above reality forever.
-        emit(
+        return [
             f"ratchet: {verdict.recorded} → {verdict.total} ({verdict.delta}) "
             "— not tightened (--no-tighten); run `baseline update` to record it"
-        )
-
-    sys.exit(1 if verdict.regressed else 0)
+        ]
+    return []
 
 
 def _run_precommit(args):
@@ -310,14 +329,14 @@ def _run_precommit_ratchet(
 
 def _run_rules(args):
     rules = list_rules()
-
-    if args.format == "json":
-        emit(json.dumps(rules, indent=2))
-    else:
-        for r in rules:
-            backend = r["backend"]
-            emit(f"  [{backend:8s}] {r['id']}")
-            emit(f"             {r['message']}")
+    emit(
+        json.dumps(rules, indent=2)
+        if args.format == "json"
+        else "\n".join(
+            f"  [{r['backend']:8s}] {r['id']}\n             {r['message']}"
+            for r in rules
+        )
+    )
 
 
 _VIOLATION_SCHEMA = {
@@ -437,105 +456,95 @@ def _run_schema(_args):
     emit(json.dumps(schema, indent=2))
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog="python-fp-lint",
-        description="Functional-programming lint rules for Python",
+def _add_rule_flags(p):
+    p.add_argument(
+        "--ruff-select",
+        default=None,
+        help="Comma-separated Ruff rule codes (overrides config.json and default)",
     )
-    parser.add_argument(
-        "--format",
-        choices=["text", "json"],
-        default="text",
-        help="Output format (default: text)",
+    p.add_argument(
+        "--ast-grep-rules",
+        default="",
+        help="Comma-separated ast-grep rule IDs to enable (overrides config.json)",
     )
-    sub = parser.add_subparsers(dest="command")
+    p.add_argument(
+        "--exclude",
+        default="",
+        help=(
+            "Comma-separated file globs to skip "
+            "(overrides the config file's `exclude`)"
+        ),
+    )
+    p.add_argument(
+        "--max-complexity",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Maximum cyclomatic complexity per function, reported as Ruff "
+            "C901 (overrides the config file's `max_complexity`)"
+        ),
+    )
+    p.add_argument(
+        "--max-statements",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Maximum statements per function, reported as Ruff PLR0915 "
+            "(overrides the config file's `max_statements`)"
+        ),
+    )
+    p.add_argument(
+        "--max-positional-args",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Maximum positional parameters per function, reported as Ruff "
+            "PLR0917 (overrides the config file's `max_positional_args`)"
+        ),
+    )
+    p.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail (exit 2) if ast-grep or Ruff is missing instead of skipping",
+    )
+    p.add_argument(
+        "--config",
+        required=True,
+        metavar="PATH",
+        help="Path to the config JSON file (required; no search, no default)",
+    )
+    return p
 
-    def add_rule_flags(p):
-        p.add_argument(
-            "--ruff-select",
-            default=None,
-            help="Comma-separated Ruff rule codes (overrides config.json and default)",
-        )
-        p.add_argument(
-            "--ast-grep-rules",
-            default="",
-            help="Comma-separated ast-grep rule IDs to enable (overrides config.json)",
-        )
-        p.add_argument(
-            "--exclude",
-            default="",
-            help=(
-                "Comma-separated file globs to skip "
-                "(overrides the config file's `exclude`)"
-            ),
-        )
-        p.add_argument(
-            "--max-complexity",
-            type=int,
-            default=None,
-            metavar="N",
-            help=(
-                "Maximum cyclomatic complexity per function, reported as Ruff "
-                "C901 (overrides the config file's `max_complexity`)"
-            ),
-        )
-        p.add_argument(
-            "--max-statements",
-            type=int,
-            default=None,
-            metavar="N",
-            help=(
-                "Maximum statements per function, reported as Ruff PLR0915 "
-                "(overrides the config file's `max_statements`)"
-            ),
-        )
-        p.add_argument(
-            "--max-positional-args",
-            type=int,
-            default=None,
-            metavar="N",
-            help=(
-                "Maximum positional parameters per function, reported as Ruff "
-                "PLR0917 (overrides the config file's `max_positional_args`)"
-            ),
-        )
-        p.add_argument(
-            "--strict",
-            action="store_true",
-            help="Fail (exit 2) if ast-grep or Ruff is missing instead of skipping",
-        )
-        p.add_argument(
-            "--config",
-            required=True,
-            metavar="PATH",
-            help="Path to the config JSON file (required; no search, no default)",
-        )
-        return p
 
-    def add_baseline_flag(p):
-        """Only for the commands a baseline means something to.
+def _add_baseline_flag(p):
+    """Only for the commands a baseline means something to.
 
-        On `check` it would be accepted and silently ignored, which reads as
-        support for a ratchet mode `check` does not have.
-        """
-        p.add_argument(
-            "--baseline",
-            default=None,
-            metavar="PATH",
-            help=(
-                "Path to the ratchet baseline file "
-                "(overrides the config file's `baseline`)"
-            ),
-        )
-        return p
+    On `check` it would be accepted and silently ignored, which reads as
+    support for a ratchet mode `check` does not have.
+    """
+    p.add_argument(
+        "--baseline",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path to the ratchet baseline file "
+            "(overrides the config file's `baseline`)"
+        ),
+    )
+    return p
 
-    # --- check ---
-    check = add_rule_flags(sub.add_parser("check", help="Run lint checks on files"))
+
+def _add_check(sub) -> None:
+    check = _add_rule_flags(sub.add_parser("check", help="Run lint checks on files"))
     check.add_argument("files", nargs="+", help="Python files to check")
 
-    # --- precommit ---
-    precommit = add_baseline_flag(
-        add_rule_flags(
+
+def _add_precommit(sub) -> None:
+    precommit = _add_baseline_flag(
+        _add_rule_flags(
             sub.add_parser(
                 "precommit",
                 help="Lint the staged content of every staged Python file",
@@ -556,33 +565,29 @@ def main():
         ),
     )
 
-    # --- rules ---
-    sub.add_parser("rules", help="List all available lint rules")
 
-    # --- baseline ---
+def _add_baseline(sub) -> None:
     baseline_cmd = sub.add_parser(
         "baseline", help="Record or inspect the ratchet's violation total"
     )
     baseline_sub = baseline_cmd.add_subparsers(dest="baseline_command", required=True)
-    add_baseline_flag(
-        add_rule_flags(
+    _add_baseline_flag(
+        _add_rule_flags(
             baseline_sub.add_parser(
                 "update", help="Lint the index and record the total"
             )
         )
     )
-    add_baseline_flag(
-        add_rule_flags(
+    _add_baseline_flag(
+        _add_rule_flags(
             baseline_sub.add_parser(
                 "show", help="Print the recorded and current totals"
             )
         )
     )
 
-    # --- schema ---
-    sub.add_parser("schema", help="Print JSON schema for check/rules output")
 
-    # --- hook-check ---
+def _add_hook_check(sub) -> None:
     hook = sub.add_parser(
         "hook-check",
         help="Read a PreToolUse event JSON from stdin and exit 0 (allow) or 2 (block)",
@@ -594,28 +599,56 @@ def main():
         help="Optional config JSON file; omitted means built-in defaults",
     )
 
-    args = parser.parse_args()
 
-    if args.command == "check":
-        _with_config_errors(_run_check, args)
-    elif args.command == "precommit":
-        _with_config_errors(_run_precommit, args)
-    elif args.command == "rules":
-        _run_rules(args)
-    elif args.command == "baseline":
-        run = (
-            _run_baseline_update
-            if args.baseline_command == "update"
-            else _run_baseline_show
-        )
-        _with_config_errors(run, args)
-    elif args.command == "schema":
-        _run_schema(args)
-    elif args.command == "hook-check":
-        _hook_check_main(args.config)
-    else:
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python-fp-lint",
+        description="Functional-programming lint rules for Python",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    sub = parser.add_subparsers(dest="command")
+    # Subcommands in the order --help lists them.
+    _add_check(sub)
+    _add_precommit(sub)
+    sub.add_parser("rules", help="List all available lint rules")
+    _add_baseline(sub)
+    sub.add_parser("schema", help="Print JSON schema for check/rules output")
+    _add_hook_check(sub)
+    return parser
+
+
+def _run_baseline(args) -> None:
+    run = (
+        _run_baseline_update
+        if args.baseline_command == "update"
+        else _run_baseline_show
+    )
+    _with_config_errors(run, args)
+
+
+# Each subcommand's entry point, by the name argparse stores in args.command.
+_COMMANDS = {
+    "check": lambda args: _with_config_errors(_run_check, args),
+    "precommit": lambda args: _with_config_errors(_run_precommit, args),
+    "rules": _run_rules,
+    "baseline": _run_baseline,
+    "schema": _run_schema,
+    "hook-check": lambda args: _hook_check_main(args.config),
+}
+
+
+def main():
+    parser = _build_parser()
+    args = parser.parse_args()
+    if args.command not in _COMMANDS:
         parser.print_help()
         sys.exit(1)
+    _COMMANDS[args.command](args)
 
 
 if __name__ == "__main__":

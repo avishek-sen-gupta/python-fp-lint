@@ -49,6 +49,38 @@ def _gate():
     return LintGate(locations=Locations(config_path=CONFIG))
 
 
+def _sparse_two_trees(repo):
+    """Commit a clean keep/a.py and a dirty away/b.py, then sparse-check out
+    only keep/ -- away/b.py stays in the index but leaves the disk."""
+    (repo / "keep").mkdir()
+    (repo / "keep" / "a.py").write_text(CLEAN)
+    (repo / "away").mkdir()
+    (repo / "away" / "b.py").write_text(DIRTY)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "two trees")
+    _git(repo, "sparse-checkout", "set", "keep")
+
+
+def _commit_conflict_side(repo, content, message):
+    (repo / "conflict.py").write_text(content)
+    _git(repo, "commit", "-qam", message)
+
+
+def _conflicted(repo):
+    """Leave conflict.py unmerged: both branches change the same line."""
+    (repo / "conflict.py").write_text("x = 0\n")
+    _git(repo, "add", "conflict.py")
+    _git(repo, "commit", "-qm", "base")
+    ours = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    _git(repo, "checkout", "-q", "-b", "other")
+    _commit_conflict_side(repo, "x = 1\n", "theirs")
+    _git(repo, "checkout", "-q", ours)
+    _commit_conflict_side(repo, "x = 2\n", "ours")
+    subprocess.run(
+        ["git", "merge", "other"], cwd=repo, capture_output=True, env=clean_env()
+    )
+
+
 def _total(repo):
     return len(ratchet.total_violations(str(repo), _gate()).violations)
 
@@ -163,45 +195,20 @@ class TestIncompleteMaterialization:
 
     def test_sparse_checkout_still_counts_files_outside_the_cone(self, repo):
         """The catastrophic case: an ordinary commit from a sparse checkout."""
-        (repo / "keep").mkdir()
-        (repo / "keep" / "a.py").write_text(CLEAN)
-        (repo / "away").mkdir()
-        (repo / "away" / "b.py").write_text(DIRTY)
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-qm", "two trees")
-        _git(repo, "sparse-checkout", "set", "keep")
+        _sparse_two_trees(repo)
         assert (repo / "away" / "b.py").exists() is False  # skip-worktree, not on disk
         assert _git(repo, "ls-files", "-v", "away/b.py").split() == ["S", "away/b.py"]
         assert _total(repo) == 2  # counted from the index all the same
 
     def test_sparse_checkout_materializes_the_excluded_file(self, repo, tmp_path):
-        (repo / "keep").mkdir()
-        (repo / "keep" / "a.py").write_text(CLEAN)
-        (repo / "away").mkdir()
-        (repo / "away" / "b.py").write_text(DIRTY)
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-qm", "two trees")
-        _git(repo, "sparse-checkout", "set", "keep")
+        _sparse_two_trees(repo)
         dest = tmp_path / "idx"
         ratchet.materialize_index(str(repo), str(dest))
         assert (dest / "away" / "b.py").read_text() == DIRTY
 
     def test_an_unmerged_index_refuses_to_produce_a_total(self, repo):
         """`checkout-index` skips a conflicted path and exits 0 regardless."""
-        (repo / "conflict.py").write_text("x = 0\n")
-        _git(repo, "add", "conflict.py")
-        _git(repo, "commit", "-qm", "base")
-        ours = _git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
-
-        _git(repo, "checkout", "-q", "-b", "other")
-        (repo / "conflict.py").write_text("x = 1\n")
-        _git(repo, "commit", "-qam", "theirs")
-        _git(repo, "checkout", "-q", ours)
-        (repo / "conflict.py").write_text("x = 2\n")
-        _git(repo, "commit", "-qam", "ours")
-        subprocess.run(
-            ["git", "merge", "other"], cwd=repo, capture_output=True, env=clean_env()
-        )
+        _conflicted(repo)
         assert _git(repo, "status", "--short").splitlines() == ["UU conflict.py"]
 
         with pytest.raises(ratchet.RatchetError) as exc:

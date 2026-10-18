@@ -146,17 +146,16 @@ class LintGate:
         self, files: Sequence[str], project_root: str
     ) -> list[LintViolation]:
         rules_dir = self._resolve_rules_dir(project_root)
-        if rules_dir is None:
-            return []
-
         sg = _find_sg()
-        if sg is None:
+        if rules_dir is None or sg is None:
             return []
+        return self._scan(sg, rules_dir, files)
 
-        sgconfig = os.path.join(rules_dir, "sgconfig.yml")
-        if not os.path.exists(sgconfig):
+    def _scan(
+        self, sg: str, rules_dir: str, files: Sequence[str]
+    ) -> list[LintViolation]:
+        if not os.path.exists(os.path.join(rules_dir, "sgconfig.yml")):
             return []
-
         # The package copy normally lives in the consumer's .venv, which is
         # gitignored -- and ast-grep silently matches nothing under an ignored
         # path -- so it has to be copied out before scanning. A rules dir the
@@ -396,13 +395,18 @@ def _materialize_rules_dir(source_dir: str, cache_root: str | None) -> str:
     root = cache_root or _default_rules_cache_root()
     target = os.path.join(root, _rules_signature(source_dir))
     if not os.path.isdir(target):
-        tmp_target = target + ".tmp"
-        if os.path.isdir(tmp_target):
-            shutil.rmtree(tmp_target)
-        os.makedirs(root, exist_ok=True)
-        shutil.copytree(source_dir, tmp_target)
-        os.replace(tmp_target, target)
+        _publish_copy(source_dir, root, target)
     return target
+
+
+def _publish_copy(source_dir: str, root: str, target: str) -> None:
+    """Copy into a temp sibling, then rename: a reader never sees half a copy."""
+    tmp_target = target + ".tmp"
+    if os.path.isdir(tmp_target):
+        shutil.rmtree(tmp_target)
+    os.makedirs(root, exist_ok=True)
+    shutil.copytree(source_dir, tmp_target)
+    os.replace(tmp_target, target)
 
 
 def _which(name: str) -> str | None:
@@ -454,12 +458,11 @@ def _resolve_rules_dir(
         os.path.join(project_root, "scripts", "lint"),
         _package_rules_dir(),
     ]
-    for candidate in candidates:
-        if os.path.isdir(candidate) and os.path.exists(
-            os.path.join(candidate, "sgconfig.yml")
-        ):
-            return candidate
-    return None
+    return next((c for c in candidates if _is_rules_dir(c)), None)
+
+
+def _is_rules_dir(path: str) -> bool:
+    return os.path.isdir(path) and os.path.exists(os.path.join(path, "sgconfig.yml"))
 
 
 class ConfigError(Exception):
@@ -476,11 +479,15 @@ def _read_config(key: str, config_path: str | None = None):
     """
     if config_path is None:
         return None
+    return _load_config(config_path).get(key)
+
+
+def _load_config(config_path: str):
     if not os.path.exists(config_path):
         raise ConfigError(f"config file not found: {config_path}")
     try:
         with open(config_path) as f:
-            return json.load(f).get(key)
+            return json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
         raise ConfigError(f"cannot read config file {config_path}: {exc}") from exc
 
@@ -488,31 +495,37 @@ def _read_config(key: str, config_path: str | None = None):
 def _run_sg_once(
     sg_path: str, rules_dir: str, files: Sequence[str]
 ) -> list[LintViolation]:
+    stdout = _run_backend(
+        "ast-grep",
+        [
+            sg_path,
+            "scan",
+            "--json",
+            "--config",
+            os.path.join(rules_dir, "sgconfig.yml"),
+            *files,
+        ],
+        len(files),
+        cwd=rules_dir,
+    )
+    if not stdout.strip():
+        return []
+    return [_sg_violation(entry) for entry in _sg_entries(stdout)]
+
+
+def _run_backend(name: str, argv: Sequence[str], file_count: int, **options) -> str:
+    """A backend's stdout. Not running at all is a BackendError, never empty
+    output: "did not run" must stay distinguishable from "found nothing"."""
     try:
-        result = subprocess.run(
-            [
-                sg_path,
-                "scan",
-                "--json",
-                "--config",
-                os.path.join(rules_dir, "sgconfig.yml"),
-                *files,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=rules_dir,
-        )
+        return subprocess.run(
+            argv, capture_output=True, text=True, timeout=30, **options
+        ).stdout
     except subprocess.TimeoutExpired as exc:
         raise BackendError(
-            f"ast-grep timed out after 30s on {len(files)} file(s)"
+            f"{name} timed out after 30s on {file_count} file(s)"
         ) from exc
     except OSError as exc:
-        raise BackendError(f"ast-grep could not be run: {exc}") from exc
-
-    if not result.stdout.strip():
-        return []
-    return [_sg_violation(entry) for entry in _sg_entries(result.stdout)]
+        raise BackendError(f"{name} could not be run: {exc}") from exc
 
 
 def _sg_entries(stdout: str) -> list[dict]:
@@ -563,48 +576,45 @@ def _run_ruff_once(
     files: Sequence[str],
     select: str,
     max_complexity: int,
+    *,
     max_statements: int = _DEFAULT_MAX_STATEMENTS,
     max_positional_args: int = _DEFAULT_MAX_POSITIONAL_ARGS,
 ) -> list[LintViolation]:
-    try:
-        result = subprocess.run(
-            [
-                ruff_path,
-                "check",
-                "--output-format",
-                "json",
-                "--select",
-                select,
-                "--ignore",
-                _DEFAULT_RUFF_IGNORE,
-                # An inline --config beats any pyproject.toml the scanned
-                # project happens to carry, so the gate's ceiling is the one
-                # that applies.
-                "--config",
-                f"lint.mccabe.max-complexity={max_complexity}",
-                "--config",
-                f"lint.pylint.max-statements={max_statements}",
-                "--config",
-                f"lint.pylint.max-positional-args={max_positional_args}",
-                *files,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise BackendError(f"ruff timed out after 30s on {len(files)} file(s)") from exc
-    except OSError as exc:
-        raise BackendError(f"ruff could not be run: {exc}") from exc
+    stdout = _run_backend(
+        "ruff",
+        [
+            ruff_path,
+            "check",
+            "--output-format",
+            "json",
+            "--select",
+            select,
+            "--ignore",
+            _DEFAULT_RUFF_IGNORE,
+            # An inline --config beats any pyproject.toml the scanned
+            # project happens to carry, so the gate's ceiling is the one
+            # that applies.
+            "--config",
+            f"lint.mccabe.max-complexity={max_complexity}",
+            "--config",
+            f"lint.pylint.max-statements={max_statements}",
+            "--config",
+            f"lint.pylint.max-positional-args={max_positional_args}",
+            *files,
+        ],
+        len(files),
+    )
+    return _ruff_violations(stdout)
 
-    if not result.stdout.strip():
+
+def _ruff_violations(stdout: str) -> list[LintViolation]:
+    if not stdout.strip():
         return []
-
     try:
-        entries = json.loads(result.stdout)
+        entries = json.loads(stdout)
     except json.JSONDecodeError as exc:
         raise BackendError(
-            f"ruff produced unparseable output: {result.stdout[:80]!r}"
+            f"ruff produced unparseable output: {stdout[:80]!r}"
         ) from exc
 
     return [
@@ -634,6 +644,7 @@ def _run_ruff(
     files: Sequence[str],
     select: str,
     max_complexity: int,
+    *,
     max_statements: int = _DEFAULT_MAX_STATEMENTS,
     max_positional_args: int = _DEFAULT_MAX_POSITIONAL_ARGS,
 ) -> list[LintViolation]:
@@ -645,7 +656,7 @@ def _run_ruff(
             chunk,
             select,
             max_complexity,
-            max_statements,
-            max_positional_args,
+            max_statements=max_statements,
+            max_positional_args=max_positional_args,
         )
     ]
