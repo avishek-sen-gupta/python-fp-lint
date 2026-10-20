@@ -110,6 +110,26 @@ class TestExceptAndWithBindings:
         ]
 
 
+class TestSingletonPatterns:
+    """beniget 0.5.0 visits a MatchSingleton's value as if it were a node;
+    True, False and None are not, and it crashes on every Python version."""
+
+    @pytest.mark.parametrize("literal", ["True", "False", "None"])
+    def test_singleton_case_is_analysed(self, tmp_path, literal):
+        code = (
+            "def f(x):\n"
+            "    match x:\n"
+            f"        case [{literal}, y]:\n            return y\n"
+            f"        case {literal}:\n            return 0\n"
+            "    x = 1\n"
+        )
+        path = _make_file(str(tmp_path), "pat.py", code)
+        result = ReassignmentGate().evaluate([path], str(tmp_path))
+        assert [(v.line, v.message) for v in result.violations] == [
+            (7, "'x' reassigned (scope: function f())")
+        ]
+
+
 class TestReassignmentGateDetection:
     """Code that should FAIL — contains reassignment."""
 

@@ -41,6 +41,17 @@ class ReassignmentGate:
         return LintResult(passed=not violations, violations=violations)
 
 
+class _DefUseChains(beniget.DefUseChains):
+    """beniget 0.5.0 aliases visit_MatchSingleton to visit_MatchValue, which
+    visits the pattern's value -- a bare True, False or None, not a node --
+    and crashes on every `case True/False/None:`. A singleton binds and reads
+    no name: the enclosing pattern only needs a Def to attach to, and the
+    gate reads only locals, so the Def is not registered in chains."""
+
+    def visit_MatchSingleton(self, node):
+        return beniget.beniget.Def(node)
+
+
 def _check_file(filepath: str) -> list[LintViolation]:
     try:
         with open(filepath) as f:
@@ -49,7 +60,7 @@ def _check_file(filepath: str) -> list[LintViolation]:
     except (SyntaxError, UnicodeDecodeError, OSError):
         return []
 
-    duc = beniget.DefUseChains()
+    duc = _DefUseChains()
     # A syntax error above is left to Ruff, which reports it. Past that
     # point the file is valid Python, so a failure here would otherwise be
     # invisible: zero reassignments, banked by the ratchet as a fall.
