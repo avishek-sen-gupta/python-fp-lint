@@ -28,7 +28,7 @@ _DEFAULT_RUFF_IGNORE = "E501,W292"
 _DEFAULT_MAX_COMPLEXITY = 3
 # Ruff's PLR0915 ceiling, counted in statements rather than physical lines.
 # Deliberately stricter than Ruff's own default of 50.
-_DEFAULT_MAX_STATEMENTS = 10
+_DEFAULT_MAX_STATEMENTS = 15
 # Ruff's PLR0917 ceiling. Keyword-only parameters, *args/**kwargs and a
 # method's self/cls are not counted. Deliberately stricter than Ruff's own
 # default of 5.

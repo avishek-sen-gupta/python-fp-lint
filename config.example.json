@@ -4,7 +4,7 @@
   "exclude": [],
   "ruff_select": "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,PLR0915,PLR0917,ANN401",
   "max_complexity": 3,
-  "max_statements": 10,
+  "max_statements": 15,
   "max_positional_args": 4,
   "ast_grep_rules": [
     "no-list-append",

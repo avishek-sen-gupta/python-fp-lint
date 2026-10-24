@@ -2,9 +2,9 @@
 """Statement count is a configurable gate, enforced through Ruff's PLR0915.
 
 Fixture calibration: Ruff counts *statements*, not physical lines, and (like
-pylint) does not count a function's trailing `return`. `_TEN` therefore scores
-10 and `_ELEVEN` scores 11, whatever their line counts. The default ceiling is
-10, so `_ELEVEN` fails out of the box and `_TEN` passes.
+pylint) does not count a function's trailing `return`. `_AT_LIMIT` therefore
+scores exactly the default ceiling and `_OVER_LIMIT` one more, whatever their
+line counts, so `_OVER_LIMIT` fails out of the box and `_AT_LIMIT` passes.
 """
 
 import json
@@ -38,15 +38,15 @@ def _function(name: str, statements: int) -> str:
 
 
 _ONE = _function("one", 1)
-_TEN = _function("ten", 10)
-_ELEVEN = _function("eleven", 11)
+_AT_LIMIT = _function("at_limit", _DEFAULT_MAX_STATEMENTS)
+_OVER_LIMIT = _function("over_limit", _DEFAULT_MAX_STATEMENTS + 1)
 
-# The same 10 statements folded onto one physical line each way round: the gate
-# must count statements, so neither the long form nor the short form matters.
-_ELEVEN_ON_FEW_LINES = (
+# The same over-limit statements folded onto one physical line: the gate must
+# count statements, so neither the long form nor the short form matters.
+_OVER_LIMIT_ON_FEW_LINES = (
     "def dense(x):\n"
-    + "".join(f"    a{i} = x + {i};" for i in range(1, 12))
-    + "\n    return a11\n"
+    + "".join(f"    a{i} = x + {i};" for i in range(1, _DEFAULT_MAX_STATEMENTS + 2))
+    + f"\n    return a{_DEFAULT_MAX_STATEMENTS + 1}\n"
 )
 
 
@@ -78,11 +78,11 @@ def _statement_rules(result):
 
 
 class TestDefaultThreshold:
-    def test_default_is_ten(self):
-        assert _DEFAULT_MAX_STATEMENTS == 10
+    def test_default_is_fifteen(self):
+        assert _DEFAULT_MAX_STATEMENTS == 15
 
     def test_function_over_the_default_is_flagged(self, tmp_path):
-        target = _source(tmp_path, "eleven.py", _ELEVEN)
+        target = _source(tmp_path, "over_limit.py", _OVER_LIMIT)
         config = _write_config(tmp_path)
         result = LintGate(settings=load_settings(config)).evaluate(
             [target], str(tmp_path)
@@ -90,7 +90,7 @@ class TestDefaultThreshold:
         assert _statement_rules(result) == ["PLR0915"]
 
     def test_function_at_the_default_passes(self, tmp_path):
-        target = _source(tmp_path, "ten.py", _TEN)
+        target = _source(tmp_path, "at_limit.py", _AT_LIMIT)
         config = _write_config(tmp_path)
         result = LintGate(settings=load_settings(config)).evaluate(
             [target], str(tmp_path)
@@ -101,7 +101,7 @@ class TestDefaultThreshold:
 class TestCountsStatementsNotLines:
     def test_statements_crammed_onto_few_lines_still_fail(self, tmp_path):
         """Semicolon-joined statements are still statements."""
-        target = _source(tmp_path, "dense.py", _ELEVEN_ON_FEW_LINES)
+        target = _source(tmp_path, "dense.py", _OVER_LIMIT_ON_FEW_LINES)
         config = _write_config(tmp_path)
         result = LintGate(settings=load_settings(config)).evaluate(
             [target], str(tmp_path)
@@ -122,7 +122,7 @@ class TestCountsStatementsNotLines:
 
 class TestResolution:
     def test_config_value_raises_the_ceiling(self, tmp_path):
-        target = _source(tmp_path, "eleven.py", _ELEVEN)
+        target = _source(tmp_path, "over_limit.py", _OVER_LIMIT)
         config = _write_config(tmp_path, max_statements=50)
         result = LintGate(settings=load_settings(config)).evaluate(
             [target], str(tmp_path)
@@ -138,7 +138,7 @@ class TestResolution:
         assert _statement_rules(result) == ["PLR0915"]
 
     def test_constructor_beats_config(self, tmp_path):
-        target = _source(tmp_path, "eleven.py", _ELEVEN)
+        target = _source(tmp_path, "over_limit.py", _OVER_LIMIT)
         config = _write_config(tmp_path, max_statements=50)
         gate = LintGate(
             settings=resolve_settings(
@@ -176,14 +176,14 @@ class TestInvalidValues:
 
 class TestCli:
     def test_flag_overrides_config(self, tmp_path):
-        target = _source(tmp_path, "eleven.py", _ELEVEN)
+        target = _source(tmp_path, "over_limit.py", _OVER_LIMIT)
         config = _write_config(tmp_path, max_statements=50)
         result = _run("check", "--config", config, "--max-statements", "10", target)
         assert result.returncode == 1
         assert result.stdout.count("PLR0915") == 1
 
     def test_flag_relaxes_the_default(self, tmp_path):
-        target = _source(tmp_path, "eleven.py", _ELEVEN)
+        target = _source(tmp_path, "over_limit.py", _OVER_LIMIT)
         config = _write_config(tmp_path)
         result = _run("check", "--config", config, "--max-statements", "50", target)
         assert result.returncode == 0
@@ -214,8 +214,8 @@ class TestEntryPoints:
 
     def test_precommit_honours_the_cli_flag(self, tmp_path):
         git = self._repo(tmp_path)
-        (tmp_path / "eleven.py").write_text(_ELEVEN)
-        git("add", "eleven.py")
+        (tmp_path / "over_limit.py").write_text(_OVER_LIMIT)
+        git("add", "over_limit.py")
         config = _write_config(tmp_path, max_statements=50)
 
         relaxed = _run("precommit", "--config", config, cwd=str(tmp_path))
@@ -235,8 +235,8 @@ class TestEntryPoints:
     def test_hook_check_honours_the_config_file(self, tmp_path):
         from python_fp_lint.hook_check import check_tool_event
 
-        target = _source(tmp_path, "eleven.py", _ELEVEN)
-        event = {"file_path": target, "content": _ELEVEN}
+        target = _source(tmp_path, "over_limit.py", _OVER_LIMIT)
+        event = {"file_path": target, "content": _OVER_LIMIT}
 
         relaxed = _write_config(tmp_path, max_statements=50)
         assert check_tool_event("Write", event, load_settings(relaxed)) == 0

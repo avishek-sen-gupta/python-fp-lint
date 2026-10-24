@@ -25,7 +25,7 @@ Every check, grouped by what it is for. Each violation is reported as
 | **Reassignment** | Binding the same name twice in one scope, parameters included | [`reassignment`](#reassignment-beniget) (beniget) |
 | **None and Optional** | Using `None` to model absence: `is None` checks, `Optional[...]`, `None` defaults, `None` match cases, `or None` | `no-is-none`, `no-is-not-none`, `no-optional-none`, `no-none-default-param`, `no-none-case-pattern`, `no-or-none-fallback` |
 | **Types** | Escape-hatch types (`Any`, `object`), mutable dataclasses, concrete `list`/`dict` parameter types, `StrEnum` | `no-any-type`, `ANN401`, `no-object-type`, `no-unfrozen-dataclass`, `no-list-dict-param-annotation`, `no-str-enum` |
-| **Function size and shape** | Too many branches, too many statements, too many positional parameters, nested `for`/`if` | `C901` (≤ 3), `PLR0915` (≤ 10), `PLR0917` (≤ 4), `no-deep-nesting` |
+| **Function size and shape** | Too many branches, too many statements, too many positional parameters, nested `for`/`if` | `C901` (≤ 3), `PLR0915` (≤ 15), `PLR0917` (≤ 4), `no-deep-nesting` |
 | **Code organisation** | `@staticmethod` and `@classmethod`, which belong at module level or as instance behaviour | `no-static-method`, `no-classmethod-utility` |
 | **Test quality** | Tests that check nothing, assertions that cannot fail usefully, `xfail` with no stated reason | `no-assertionless-test`, `no-weak-assert`, `no-xfail-without-reason` |
 | **General hygiene** | Style errors, unused/undefined names, import order and relative imports, common bugs, outdated syntax, blind `except`, `print` | Ruff `E`, `W`, `F`, `I`, `TID252`, `B`, `UP`, `SIM`, `RUF`, `BLE`, `T20` |
@@ -105,7 +105,7 @@ outcome in the test, or have the helper return a value the test asserts on.
 | `T20` | Print statement detection |
 | `TID252` | Relative import detection |
 | `C901` | Cyclomatic complexity — ceiling configurable via `max_complexity`, default **3** (see [Cyclomatic complexity](#cyclomatic-complexity)) |
-| `PLR0915` | Statement count per function — ceiling configurable via `max_statements`, default **10** (see [Statement count](#statement-count)) |
+| `PLR0915` | Statement count per function — ceiling configurable via `max_statements`, default **15** (see [Statement count](#statement-count)) |
 | `PLR0917` | Positional parameters per function — ceiling configurable via `max_positional_args`, default **4** (see [Positional parameters](#positional-parameters)) |
 | `ANN401` | Explicit `Any` in function parameter and return annotations — partial overlap with `no-any-type`, which also covers variable annotations and `Any` nested in generics |
 
@@ -213,7 +213,7 @@ uv run python -m python_fp_lint check --config fp.json --max-positional-args 6 s
 {
   "ruff_select": "E,F,W,I,B,UP,SIM,RUF,BLE,T20,TID252,C901,PLR0915,PLR0917,ANN401",
   "max_complexity": 3,
-  "max_statements": 10,
+  "max_statements": 15,
   "max_positional_args": 4,
   "ast_grep_rules": ["no-list-append", "no-dict-update"],
   "exclude": ["generated/", "**/migrations/**", "*_pb2.py"]
@@ -319,12 +319,14 @@ statements crammed onto one line with semicolons each count separately. A functi
 the cap is reported as Ruff's `PLR0915`:
 
 ```
-[PLR0915] src/handler.py:42 — Too many statements (18 > 10)
+[PLR0915] src/handler.py:42 — Too many statements (18 > 15)
 ```
 
-The default is **10** — deliberately stricter than Ruff's own default of 50, on the same
-view that drives `max_complexity`: a long method wants decomposing. Set it wherever you
-like:
+The default is **15** — far stricter than Ruff's own default of 50, on the same view that
+drives `max_complexity`: a long method wants decomposing. It is not 10, because a strict
+cap turns logging and other straight-line boilerplate into refactoring busywork;
+`max_complexity` already catches the branching that makes a function hard to read. Set it
+wherever you like:
 
 ```jsonc
 { "max_statements": 20 }   // or --max-statements 20, or LintSettings(max_statements=20)
